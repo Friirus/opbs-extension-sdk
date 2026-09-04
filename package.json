@@ -6,7 +6,11 @@
     "type": "git",
     "url": "https://github.com/Friirus/opbs-extension-sdk"
   },
-  "files": ["dist", "loader", "CHANGELOG.md"],
+  "files": [
+    "dist",
+    "loader",
+    "CHANGELOG.md"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
