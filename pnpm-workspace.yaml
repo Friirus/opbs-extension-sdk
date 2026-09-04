@@ -1,0 +1,8 @@
+# Copié tel quel en pnpm-workspace.yaml dans le miroir (packages/extension-sdk/mirror-ci
+# gère les fichiers soumis au scope "workflow" ; celui-ci est du contenu ordinaire, donc
+# synchronisé automatiquement comme le reste). Sans lui, `pnpm install` sans lockfile y
+# échoue en CI sur des scripts de build de dépendances non approuvés — voir le message
+# ##[error] ERR_PNPM_IGNORED_BUILDS rencontré en le mettant en place. Aucun ne l'est ici :
+# @parcel/watcher et unrs-resolver (transitives de jest) n'ont besoin de leur binaire natif
+# que pour du mode watch, jamais utilisé dans ce paquet.
+allowBuilds: {}
