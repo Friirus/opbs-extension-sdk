@@ -38,8 +38,12 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
+      # --ignore-scripts : ce paquet standalone n'a pas de lockfile enregistrant une approbation
+      # antérieure de scripts de build de dépendances (@parcel/watcher, unrs-resolver, transitives
+      # de jest) — sans ça, pnpm refuse l'install en CI non interactive. Leurs binaires natifs ne
+      # servent qu'au mode watch, jamais utilisé ici.
       - name: Installer les dépendances
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Construire le SDK
         run: pnpm build
