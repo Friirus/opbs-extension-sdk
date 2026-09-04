@@ -6,6 +6,10 @@ name: Publier @opbs/extension-sdk
 # packages/extension-sdk dans Friirus/opbs, source de vérité pour le code — c'est ici,
 # et seulement ici, qu'on publie, parce que l'attestation de provenance npm exige que
 # le dépôt GitHub Actions d'origine soit public.
+#
+# Ce fichier lui-même est généré : sa source de vérité est
+# packages/extension-sdk/mirror-ci/publish.yml dans Friirus/opbs, copiée ici par
+# sync-extension-sdk-mirror.yml. Ne pas éditer directement dans le miroir.
 on:
   workflow_dispatch:
     inputs:
@@ -32,7 +36,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
           registry-url: https://registry.npmjs.org
 
       - name: Installer les dépendances
