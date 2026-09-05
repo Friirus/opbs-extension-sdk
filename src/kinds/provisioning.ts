@@ -44,6 +44,14 @@ export const NO_CAPABILITIES: ProvisioningCapabilities = {
   snapshot: false,
 };
 
+/**
+ * Même valeur que `NO_CAPABILITIES` (conservé pour ne rien casser de ce qui l'importe déjà), sous
+ * le nom que portent ses équivalents des autres genres — `NO_DNS_CAPABILITIES`,
+ * `NO_PAYMENT_CAPABILITIES`, `NO_REGISTRAR_CAPABILITIES`. Seul `provisioning` avait échappé à cette
+ * convention.
+ */
+export const NO_PROVISIONING_CAPABILITIES = NO_CAPABILITIES;
+
 /** Les actions du cycle de vie, nommées une fois pour que noyau et modules parlent la même langue. */
 export type ProvisioningOperation = keyof ProvisioningCapabilities;
 
@@ -189,10 +197,14 @@ export interface ProvisioningOutcome {
  * qui, comme Proxmox, délivrent un billet à présenter à un client noVNC que l'hôte héberge
  * lui-même. Réduire les deux à une URL obligerait le second à en fabriquer une, donc à connaître
  * l'adresse publique de l'hôte — ce qu'un module n'a aucun moyen de savoir.
+ *
+ * `expiresAt` accepte `Date | string`, même raison que `SnapshotInfo.createdAt` : un module qui
+ * relit cette date depuis une réponse JSON n'a aucune raison de la faire passer par `new Date(...)`
+ * avant de la rendre. Normalisée à la lecture par le consommateur de `console()`.
  */
 export type ConsoleSession =
-  | { kind: "url"; url: string; expiresAt?: Date }
-  | { kind: "vnc-ticket"; host: string; port: number; ticket: string; expiresAt?: Date };
+  | { kind: "url"; url: string; expiresAt?: Date | string }
+  | { kind: "vnc-ticket"; host: string; port: number; ticket: string; expiresAt?: Date | string };
 
 /** Sauvegarde déclenchée. La taille n'est connue qu'une fois l'opération terminée, d'où l'optionnel. */
 export interface BackupOutcome {
@@ -210,7 +222,12 @@ export interface SnapshotInfo {
   /** Référence chez le fournisseur (nom du snapshot Proxmox, par ex.) — opaque pour le noyau. */
   id: string;
   label: string;
-  createdAt: Date;
+  /**
+   * `Date | string` : un module qui relit cette date depuis l'API JSON d'un fournisseur n'a aucune
+   * raison de la faire passer par `new Date(...)` avant de la rendre. Le panel normalise à la
+   * lecture (`self-service.service.ts`).
+   */
+  createdAt: Date | string;
 }
 
 /**

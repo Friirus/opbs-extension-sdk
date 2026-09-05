@@ -5,8 +5,13 @@ Ce fichier retrace `HOST_CONTRACT_VERSION` (`src/version.ts`), c'est-à-dire la 
 hors plage n'est pas chargé du tout : mieux vaut un module éteint qu'un module qui appelle un
 contrat qu'il croit connaître.
 
-**En 0.x, toute modification du contrat est une rupture** au sens de semver : `^0.1.0` ne couvre
-pas `0.2.0`. C'est délibéré tant que la surface n'est pas figée — voir `COMPATIBILITY.md`.
+**En 0.x, `HOST_CONTRACT_VERSION` monte à chaque modification du contrat**, additive ou non — ce
+fichier reste ainsi une liste complète de ce qu'un auteur peut observer depuis le paquet. Ce qui
+éteint réellement un module, en revanche, c'est le franchissement de
+`HOST_CONTRACT_COMPATIBLE_SINCE` (`src/version.ts`), le plancher de compatibilité : il ne monte que
+sur une rupture non additive, si bien qu'une mineure purement additive (comme `0.29.0` ci-dessous)
+n'éteint aucun module existant. C'est délibéré tant que la surface n'est pas figée — voir
+`COMPATIBILITY.md`.
 
 > **Sur les versions 0.2 à 0.5 : elles n'ont jamais été publiées.** La constante est restée à
 > `0.1.0` du 2 au 17 août 2026 pendant que le contrat gagnait deux genres entiers et une demi-
@@ -14,6 +19,100 @@ pas `0.2.0`. C'est délibéré tant que la surface n'est pas figée — voir `CO
 > l'histoire des ruptures soit lisible ; seule `0.6.0` a réellement circulé sous ce numéro. Un
 > module qui déclare `^0.1.0` cesse donc de se charger à partir de cette version — c'est l'effet
 > recherché, il a été écrit contre un contrat qui n'existe plus.
+
+## 0.32.0 — 2026-09-05
+
+Additif, aucune rupture de signature — pas même pour `HostContext.emit`, qui reste
+`(event: string, payload: Record<string, unknown>)`.
+
+- **`CoreEventPayloads`** : la forme exacte des 22 événements de `CORE_EVENTS`, reconstituée à
+  partir de chacun de ses points de publication réels
+  (`apps/api/src/events/events.service.ts`, `apps/worker/src/events/publish-event.ts`). Un module
+  `notification` narrowe désormais `event.payload` sur `event.type` (`NotificationEvent<E>`) plutôt
+  que de lire `Record<string, unknown>` et deviner. Verrouillé par un type d'exhaustivité interne :
+  un événement ajouté à `CORE_EVENTS` sans entrée correspondante ici (ou l'inverse) fait échouer la
+  compilation du SDK lui-même, pas seulement `public-surface.spec.ts`.
+- **`publish()`/`publishEvent()` typés** (`EventsService` côté API, `publish-event.ts` côté worker) :
+  deux surcharges — un littéral de `CoreEvent` exige `CoreEventPayloads[E]`, tout le reste
+  (`Exclude<E, CoreEvent>`, donc un événement propre à un module) garde `Record<string, unknown>`.
+  A révélé un site où le typage de Prisma masquait un `string | null` réel
+  (`referral-commissions.ts`), corrigé par l'assertion déjà utilisée deux lignes plus haut dans le
+  même fichier.
+- **`NO_PAYMENT_CAPABILITIES`, `NO_PROVISIONING_CAPABILITIES`** : les deux derniers genres à
+  capacités qui n'exportaient pas cette constante sous le nom que portent ses équivalents
+  (`NO_DNS_CAPABILITIES`, `NO_REGISTRAR_CAPABILITIES`) — `payment` la redéfinissait localement dans
+  son propre fichier de test, `provisioning` l'exportait sous le nom générique `NO_CAPABILITIES`
+  (conservé, pour ne rien casser).
+- **`RegistrarOutcome.expiryDate`, `SnapshotInfo.createdAt`, `ConsoleSession.expiresAt`** :
+  `Date | string` plutôt que `Date` seul. Un module qui relit une date depuis une réponse JSON n'a
+  aucune raison de la faire passer par `new Date(...)` avant de la rendre. Le noyau normalise à la
+  lecture (`domain-actions.processor.ts`, `self-service.service.ts`) pour que le format qui
+  atteint la base ou le client reste stable quelle que soit la forme rendue par le module.
+- **`SupportedLocale`, `SUPPORTED_LOCALES`, `DEFAULT_LOCALE`** enfin exportés depuis `src/index.ts` :
+  `HostContext.locale` référençait un type qu'un auteur tiers ne pouvait nommer nulle part.
+- `EXTENSIONS.md` documente que `WebhookRequest.rawBody: Buffer` requiert `@types/node` sous
+  `// @ts-check`, et illustre le narrowing de `NotificationEvent` sur un événement canonique.
+
+## 0.31.0 — 2026-09-05
+
+Rien ne change dans les types exportés — cette version documente et outille le contrat existant,
+elle n'en modifie aucune signature.
+
+- **CLI publiée** : `npx @opbs/extension-sdk check <dossier>` et `create <genre> <id> [--dir]`,
+  déplacées de `scripts/` (qui n'étaient utilisables que depuis ce dépôt) vers `src/cli/` et un
+  `bin` unique (`opbs-extension`). `pnpm check-extension`/`pnpm create-extension` gardent leur
+  usage, désormais un simple appel au binaire compilé.
+- **Squelettes générés typés** : chaque fichier que `create` écrit porte `// @ts-check` et un
+  `@type` JSDoc nommant son descripteur (`ProvisioningDescriptor`, `PaymentGatewayDescriptor`…) —
+  un auteur qui installe `@opbs/extension-sdk` en `devDependency` voit son éditeur souligner un
+  champ manquant avant même de lancer `check`. Le squelette `notification` fournit désormais un
+  `send` réel (`{ delivered: false, error: "TODO" }`) plutôt qu'un exemple en commentaire : `send`
+  est une méthode requise par le type, même si un canal comme `smtp` s'en passe légitimement à
+  l'exécution.
+- **Rapport d'API** (`api-report/extension-sdk.api.d.ts`) : instantané des `.d.ts` que `tsc` produit
+  réellement pour `src/index.ts` et `src/loader/index.ts`, comparé à chaque `pnpm test`
+  (`api-report.spec.ts`). Complète `public-surface.spec.ts`, qui verrouille les noms exportés mais
+  pas la forme complète d'une signature (un paramètre optionnel devenu requis, par exemple).
+  `UPDATE_API_REPORT=1` régénère l'instantané après un changement voulu.
+
+## 0.30.0 — 2026-09-05
+
+**Introduit un plancher de compatibilité.** Jusqu'ici, `satisfies(hostVersion, engines.host)` était
+le seul critère : une mineure additive comme `0.29.0` ci-dessous aurait quand même éteint tout
+module déclarant `^0.28.0`, puisqu'en semver `^0.28.0` ne couvre pas `0.29.0`. `version.ts` gagne
+`HOST_CONTRACT_COMPATIBLE_SINCE` — la plus ancienne version du contrat encore acceptée. Un module
+reste chargé tant que la version minimale que sa plage `engines.host` accepte se situe entre ce
+plancher et `HOST_CONTRACT_VERSION`, quel que soit l'écart avec la version courante. Vaut `0.16.0` :
+dernière rupture non additive du contrat (voir cette entrée plus bas) — le plancher lui-même ne
+remonte que sur une rupture de cette nature, jamais sur un ajout.
+
+- `loader/compatibility.ts` (`incompatibilityReason`) : deuxième chemin vers `null`, après le
+  `satisfies` classique — `minVersion(range)` compris dans `[compatibleSince, hostVersion]`. Les
+  bornes hautes explicites d'une plage (`<0.25.0`) sont ignorées par ce chemin, comme par le
+  premier : en 0.x elles ne disent rien de plus que le caret.
+- `loader/discoverExtensions` gagne l'option `compatibleSince`, injectable pour les tests sur le
+  même principe que `hostVersion` — `HOST_CONTRACT_COMPATIBLE_SINCE` par défaut.
+- Purement du côté du chargeur : aucun descripteur, aucune interface de `kinds/` ne change.
+
+## 0.29.0 — 2026-09-05
+
+Additif, aucune rupture de signature : `ExtensionStorage.keys(prefix): Promise<string[]>` et
+`AddonOutcome { note?: string }`, rendu optionnellement par `AddonDescriptor.onAttach`. Un module
+qui ignore les deux se comporte exactement comme avant.
+
+**`keys`.** Clés du module commençant par `prefix` (`""` pour tout lister), triées, plafonnées à
+`MAX_STORAGE_KEYS_PER_MODULE` comme `set`. Sans elle, un module tenant une ressource par clé — un
+port par `port:<n>`, comme `pterodactyl-ports` depuis le SDK 0.28.0 — ne pouvait ni compter ce
+qu'il lui restait, ni retirer son offre une fois la plage pleine, ni proposer à l'hébergeur un
+écran listant ce qu'il a alloué. Requête triviale : la clé primaire du magasin est déjà
+`(moduleId, key)`.
+
+**`AddonOutcome`.** `onAttach` rendait `Promise<void>` : un module qui alloue une ressource portant
+une identité pour le client (un numéro de port, une adresse) n'avait aucun moyen de la lui
+communiquer. `SubscriptionAddon.provisioningNote` n'était renseignée qu'en échec, alors que le
+portail l'affiche quel que soit l'état — un succès muet restait muet. `onAttach` peut désormais
+rendre `{ note?: string }`, posé dans cette même colonne. Le contournement en place jusqu'ici — une
+page de portail dédiée par module — reste valide, ce n'est plus la seule option.
 
 ## 0.28.0 — 2026-09-02
 
@@ -540,9 +639,13 @@ Première version publiée du contrat : `HostContext`, `ExtensionManifest`, `Ext
 1. Modifier la surface publique (`src/index.ts` et ce qu'il exporte).
 2. `pnpm --filter @opbs/extension-sdk test` échoue sur `public-surface.spec.ts` : c'est le
    garde-fou, il rappelle que la version doit suivre.
-3. Incrémenter `HOST_CONTRACT_VERSION` (mineure, en 0.x) et ajouter une entrée ici.
-4. Mettre à jour l'instantané attendu, les `engines.host` des exemples
-   (`examples/extensions/*/extension.json`) et les gabarits de `scripts/create-extension.ts`.
-5. Aligner `"version"` dans `package.json` sur `HOST_CONTRACT_VERSION` — resté oublié du 2 août au
-   28 août 2026, sans conséquence tant que le paquet n'était pas publié, mais c'est ce champ qui
-   ferait foi sur npm dès la première publication.
+3. Incrémenter `HOST_CONTRACT_VERSION` (mineure, en 0.x), ajouter une entrée ici, et aligner
+   `"version"` dans `package.json` — resté oublié du 2 août au 28 août 2026, sans conséquence tant
+   que le paquet n'était pas publié, mais c'est ce champ qui fait foi sur npm dès la première
+   publication.
+4. Si le changement **n'est pas additif** (signature changée, champ devenu obligatoire, genre
+   retiré), relever aussi `HOST_CONTRACT_COMPATIBLE_SINCE` à la nouvelle version : c'est ce qui
+   éteint les modules écrits contre l'ancien contrat plutôt que de les laisser appeler une
+   interface qui a changé sous eux. Un ajout pur, lui, ne touche pas au plancher — c'est le point de
+   son existence : `engines.host` des exemples n'a besoin d'aucune mise à jour dans ce cas.
+5. Mettre à jour l'instantané attendu (`public-surface.spec.ts`).

@@ -86,8 +86,15 @@ export interface RegistrarTarget<
 export interface RegistrarOutcome {
   remoteId?: string;
   remoteMeta?: Record<string, unknown>;
-  /** Renseignée par `register`/`renew`/`transfer` : nouvelle date d'expiration chez le registrar. */
-  expiryDate?: Date;
+  /**
+   * Renseignée par `register`/`renew`/`transfer` : nouvelle date d'expiration chez le registrar.
+   *
+   * `Date | string` plutôt que `Date` seul : la plupart des API REST de registrar rendent une
+   * chaîne ISO, et rien n'oblige un module à la faire passer par `new Date(...)` avant de la
+   * rendre — un module `// @ts-check` qui renvoie la chaîne telle quelle a raison de le faire. Le
+   * noyau normalise à la lecture (`domain-actions.processor.ts`).
+   */
+  expiryDate?: Date | string;
   note?: string;
   /** Même sémantique que `ProvisioningOutcome.manualActionRequired` : le domaine reste « en attente » tant que vrai. */
   manualActionRequired?: boolean;

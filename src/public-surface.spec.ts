@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { HOST_CONTRACT_VERSION } from "./version";
+import { lte, valid } from "semver";
+import { HOST_CONTRACT_COMPATIBLE_SINCE, HOST_CONTRACT_VERSION } from "./version";
 
 /**
  * La surface est lue dans le **source**, pas dans le module compilé.
@@ -98,9 +99,10 @@ function kindFiles(): string[] {
  */
 
 const RAPPEL =
-  "Surface du contrat modifiée. Incrémentez HOST_CONTRACT_VERSION (mineure, en 0.x), ajoutez une " +
-  "entrée dans packages/extension-sdk/CHANGELOG.md, mettez à jour les engines.host des exemples " +
-  "(examples/extensions/*/extension.json), puis cet instantané.";
+  "Surface du contrat modifiée. Incrémentez HOST_CONTRACT_VERSION (mineure, en 0.x) dans " +
+  "version.ts et package.json, ajoutez une entrée dans packages/extension-sdk/CHANGELOG.md, et si " +
+  "le changement n'est pas additif relevez aussi HOST_CONTRACT_COMPATIBLE_SINCE — puis cet " +
+  "instantané.";
 
 const KINDS = ["provisioning", "payment", "notification", "theme", "addon", "registrar", "dns"];
 
@@ -202,6 +204,7 @@ const DNS_CAPABILITIES = ["createZone", "deleteZone", "ptr", "syncZone"];
 const EXPORTS = [
   "AddonDescriptor",
   "AddonOffering",
+  "AddonOutcome",
   "AddonSubscriptionContext",
   "AvailabilityResult",
   "BackupOutcome",
@@ -220,6 +223,8 @@ const EXPORTS = [
   "ContributedPage",
   "ContributedScreen",
   "CoreEvent",
+  "CoreEventPayloads",
+  "DEFAULT_LOCALE",
   "DEFAULT_THEME_TOKENS",
   "DNS_RECORD_TYPES",
   "DnsCapabilities",
@@ -238,6 +243,7 @@ const EXPORTS = [
   "ExtensionManifest",
   "ExtensionStorage",
   "GatewayEvent",
+  "HOST_CONTRACT_COMPATIBLE_SINCE",
   "HOST_CONTRACT_VERSION",
   "HostContext",
   "MethodSetupOutcome",
@@ -250,6 +256,8 @@ const EXPORTS = [
   "ModulePageService",
   "NO_CAPABILITIES",
   "NO_DNS_CAPABILITIES",
+  "NO_PAYMENT_CAPABILITIES",
+  "NO_PROVISIONING_CAPABILITIES",
   "NO_REGISTRAR_CAPABILITIES",
   "NodeCapacitySnapshot",
   "NotificationChannelDescriptor",
@@ -281,6 +289,7 @@ const EXPORTS = [
   "RegistrarTarget",
   "ResolvedTheme",
   "ResourceSpec",
+  "SUPPORTED_LOCALES",
   "ScreenActionSection",
   "ScreenBundle",
   "ScreenFormSection",
@@ -290,6 +299,7 @@ const EXPORTS = [
   "SnapshotInfo",
   "StorageUsageSnapshot",
   "StoredMethodDetails",
+  "SupportedLocale",
   "THEME_ISLANDS",
   "THEME_VIEWS",
   "THEME_VIEW_NAMES",
@@ -476,6 +486,31 @@ describe("surface publique du contrat d'extension", () => {
     // Le message ne sert à rien s'il n'est lu qu'ici : il est repris dans CHANGELOG.md, qui est
     // l'endroit où l'on arrive quand ce fichier échoue.
     expect(RAPPEL).toContain("HOST_CONTRACT_VERSION");
+  });
+});
+
+describe("version du contrat", () => {
+  const changelog = () => readFileSync(join(SRC, "..", "CHANGELOG.md"), "utf8");
+
+  it("CHANGELOG.md documente HOST_CONTRACT_VERSION avec une date", () => {
+    // Un titre sans date se serait glissé pour "0.29.0 — 2026-09-05" : le format complet, pas
+    // seulement la présence du numéro, sinon une entrée bâclée passerait ce verrou.
+    expect(changelog()).toMatch(
+      new RegExp(`^## ${HOST_CONTRACT_VERSION.replace(/\./g, "\\.")} — \\d{4}-\\d{2}-\\d{2}$`, "m"),
+    );
+  });
+
+  it("package.json suit HOST_CONTRACT_VERSION", () => {
+    const pkg = JSON.parse(readFileSync(join(SRC, "..", "package.json"), "utf8")) as {
+      version: string;
+    };
+    expect(pkg.version).toBe(HOST_CONTRACT_VERSION);
+  });
+
+  it("le plancher de compatibilité est une version valide, jamais postérieure au contrat, et documentée", () => {
+    expect(valid(HOST_CONTRACT_COMPATIBLE_SINCE)).not.toBeNull();
+    expect(lte(HOST_CONTRACT_COMPATIBLE_SINCE, HOST_CONTRACT_VERSION)).toBe(true);
+    expect(changelog()).toContain(`## ${HOST_CONTRACT_COMPATIBLE_SINCE}`);
   });
 });
 

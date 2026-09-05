@@ -1,12 +1,4 @@
-import { missingPaymentOperations } from "./payment";
-
-const NO_CAPABILITIES = {
-  offSession: false,
-  refund: false,
-  webhook: false,
-  storedMethods: false,
-  methodSetup: false,
-};
+import { missingPaymentOperations, NO_PAYMENT_CAPABILITIES as NO_CAPABILITIES } from "./payment";
 
 /**
  * Même raison que `missingProvisioningOperations` (`kinds/provisioning.spec.ts`) : une capacité

@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NO_PAYMENT_CAPABILITIES } from "../kinds/payment";
 import { discoverExtensions } from "./discover";
 
 let root: string;
@@ -36,18 +37,6 @@ function drop(dirName: string, manifest: unknown, entry?: string): string {
   }
   return dir;
 }
-
-/**
- * Capacités toutes éteintes, pour les genres qui en exigent un objet. Un module qui n'en promet
- * aucune reste parfaitement valide — c'est le cas d'une passerelle qui se contente d'encaisser.
- */
-const NO_PAYMENT_CAPABILITIES = {
-  offSession: false,
-  refund: false,
-  webhook: false,
-  storedMethods: false,
-  methodSetup: false,
-};
 
 /** Descripteur minimal valide, tel qu'un module tiers l'exporterait. */
 const descriptorSource = (id = "acme-pay", kind = "payment") => `
@@ -253,10 +242,29 @@ describe("compatibilité", () => {
     });
   });
 
-  it("en 0.x, une mineure de plus est une rupture — et doit l'être", () => {
+  it("en 0.x, une mineure additive de plus reste couverte par le plancher", () => {
+    drop("acme-pay", { ...MANIFEST, engines: { host: "^0.28.0" } }, descriptorSource());
+
+    expect(
+      discoverExtensions({ dir: root, hostVersion: "0.30.0", compatibleSince: "0.16.0" })[0]!
+        .status,
+    ).toBe("OK");
+  });
+
+  it("mais un module écrit avant le plancher reste éteint", () => {
     drop("acme-pay", { ...MANIFEST, engines: { host: "^0.1.0" } }, descriptorSource());
 
-    expect(discoverExtensions({ dir: root, hostVersion: "0.2.0" })[0]!.status).toBe("INCOMPATIBLE");
+    expect(
+      discoverExtensions({ dir: root, hostVersion: "0.30.0", compatibleSince: "0.16.0" })[0],
+    ).toMatchObject({ status: "INCOMPATIBLE", statusMessage: expect.stringMatching(/plancher/) });
+  });
+
+  it("une vraie rupture relève le plancher, et redevient une incompatibilité", () => {
+    drop("acme-pay", { ...MANIFEST, engines: { host: "^0.1.0" } }, descriptorSource());
+
+    expect(
+      discoverExtensions({ dir: root, hostVersion: "0.2.0", compatibleSince: "0.2.0" })[0]!.status,
+    ).toBe("INCOMPATIBLE");
   });
 });
 

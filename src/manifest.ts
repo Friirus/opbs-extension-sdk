@@ -120,9 +120,11 @@ export interface ExtensionDescriptor<TConfig = Record<string, unknown>> {
   /**
    * Écrans que ce module ajoute au panel. Absent ou vide : le module n'en contribue aucun.
    *
-   * Déclaratif, quel que soit le genre du module — un canal de notification peut vouloir un
-   * bouton d'essai, un provisionneur un tableau de bord. Rendu par le panel avec le même moteur
-   * que `configFields`, jamais par du code React déposé par le module.
+   * Déclaratif par défaut, quel que soit le genre du module — un canal de notification peut
+   * vouloir un bouton d'essai, un provisionneur un tableau de bord — rendu par le panel avec le
+   * même moteur que `configFields`. Depuis le SDK 0.22.0, un écran peut aussi livrer son propre
+   * rendu (`ContributedScreen.bundle`, un fichier ESM déjà construit que le panel importe à
+   * l'exécution) : `sections` reste alors le repli si ce bundle est refusé ou absent.
    */
   contributesScreens?: ContributedScreen[];
   /**

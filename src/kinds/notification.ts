@@ -1,4 +1,5 @@
 import type { HostContext } from "../host";
+import type { CoreEvent, CoreEventPayloads } from "../events";
 import type { ExtensionDescriptor } from "../manifest";
 
 /**
@@ -8,10 +9,16 @@ import type { ExtensionDescriptor } from "../manifest";
  * `HostContext.emit`, préfixés `extension.<moduleId>.<événement>`. Un canal ne connaît pas à
  * l'avance le vocabulaire de tous les modules installés — le restreindre ici l'empêcherait de
  * jamais recevoir un événement propre à un module tiers.
+ *
+ * `payload` se resserre quand `E` est un littéral de `CoreEvent` connu, ex.
+ * `NotificationEvent<"invoice.paid">` donne `{ invoiceId: string; totalCents: number }`. Le
+ * paramètre par défaut (`string`) ne vérifie aucun littéral particulier : `E extends CoreEvent` y
+ * est faux, et `payload` reste `Record<string, unknown>` — la signature de `send` ci-dessous ne
+ * change donc pas pour un canal qui ne se sert pas de ce narrowing.
  */
-export interface NotificationEvent {
-  type: string;
-  payload: Record<string, unknown>;
+export interface NotificationEvent<E extends string = string> {
+  type: E;
+  payload: E extends CoreEvent ? CoreEventPayloads[E] : Record<string, unknown>;
   occurredAt: string;
 }
 

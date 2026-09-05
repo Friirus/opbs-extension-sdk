@@ -70,4 +70,13 @@ export interface ExtensionStorage {
    */
   setIfAbsent(key: string, value: unknown): Promise<boolean>;
   delete(key: string): Promise<void>;
+  /**
+   * Clés du module commençant par `prefix` (`""` pour tout lister), triées. C'est ce qui manquait
+   * à un module tenant une ressource par clé (un port par `port:<n>`) : sans `keys`, il ne peut ni
+   * compter ce qu'il lui reste, ni retirer son offre une fois la plage pleine, ni proposer à
+   * l'hébergeur un écran listant ce qu'il a alloué. Plafonné comme `set` : au plus
+   * `MAX_STORAGE_KEYS_PER_MODULE` résultats, puisque c'est aussi le plafond de ce qu'un module peut
+   * avoir écrit.
+   */
+  keys(prefix: string): Promise<string[]>;
 }

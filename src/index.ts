@@ -7,7 +7,7 @@
  * changer — voir `COMPATIBILITY.md` à la racine du dépôt.
  *
  * Principe de rédaction suivi ici : **un contrat s'écrit avec sa première implémentation, jamais
- * avant.** Les six genres ont désormais tous la leur ; `notification` et `theme`, longtemps nommés
+ * avant.** Les sept genres ont désormais tous la leur ; `notification` et `theme`, longtemps nommés
  * dans `EXTENSION_KINDS` sans interface — la base de données devait les connaître avant que le
  * contrat n'existe —, ont rejoint les autres.
  *
@@ -17,6 +17,8 @@
  */
 
 export { ExtensionConfigError, UnknownExtensionError } from "./errors";
+export { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./locale";
+export type { SupportedLocale } from "./locale";
 
 export {
   isSecretField,
@@ -30,7 +32,7 @@ export {
 } from "./config-fields";
 export type { ConfigField, ConfigFieldOption, ConfigFieldType } from "./config-fields";
 
-export { HOST_CONTRACT_VERSION } from "./version";
+export { HOST_CONTRACT_COMPATIBLE_SINCE, HOST_CONTRACT_VERSION } from "./version";
 
 export { mergeDriverConfig, mergeResourceSpec } from "./merge";
 
@@ -50,7 +52,7 @@ export type { CapturedEvent, CapturedLogEntry, TestHostContext, TestHostOptions 
 // `./loader/index.ts`, importé séparément via `@opbs/extension-sdk/loader`.
 
 export { CORE_EVENTS } from "./events";
-export type { CoreEvent } from "./events";
+export type { CoreEvent, CoreEventPayloads } from "./events";
 
 export { isEventDrivenChannel } from "./kinds/notification";
 export type {
@@ -94,6 +96,7 @@ export {
   missingStorageUsageReporting,
   missingUsageReporting,
   NO_CAPABILITIES,
+  NO_PROVISIONING_CAPABILITIES,
 } from "./kinds/provisioning";
 export type {
   BackupOutcome,
@@ -205,7 +208,12 @@ export type {
 export { isReservedPageSlug, RESERVED_PAGE_SLUGS } from "./reserved-slugs";
 
 export { missingAddonOperations } from "./kinds/addon";
-export type { AddonDescriptor, AddonOffering, AddonSubscriptionContext } from "./kinds/addon";
+export type {
+  AddonDescriptor,
+  AddonOffering,
+  AddonOutcome,
+  AddonSubscriptionContext,
+} from "./kinds/addon";
 
 export { missingRegistrarOperations, NO_REGISTRAR_CAPABILITIES } from "./kinds/registrar";
 export type {
@@ -230,7 +238,7 @@ export type {
   PtrTarget,
 } from "./kinds/dns";
 
-export { missingPaymentOperations } from "./kinds/payment";
+export { missingPaymentOperations, NO_PAYMENT_CAPABILITIES } from "./kinds/payment";
 export type {
   ChargeOutcome,
   ChargeRequest,

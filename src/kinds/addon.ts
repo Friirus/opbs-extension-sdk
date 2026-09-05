@@ -48,6 +48,18 @@ export interface AddonSubscriptionContext {
 }
 
 /**
+ * Ce que `onAttach` peut rendre en plus de réussir — additif, sur le modèle de
+ * `ProvisioningOutcome` (`kinds/provisioning.ts`). Sans elle, un module qui alloue une ressource
+ * portant une identité pour le client (un numéro de port, une adresse) n'avait aucun moyen de la
+ * lui communiquer : `SubscriptionAddon.provisioningNote` n'était renseignée qu'en cas d'échec, et
+ * le portail l'affiche pourtant quel que soit l'état.
+ */
+export interface AddonOutcome {
+  /** Message destiné au client, posé dans `SubscriptionAddon.provisioningNote` — ex. « Port alloué : 25565 ». */
+  note?: string;
+}
+
+/**
  * Contrat d'un module qui propose ses propres options d'abonnement, avec un effet réel à
  * l'ajout/au retrait — par opposition au catalogue interne (`AddonProduct`), purement tarifaire et
  * géré par le staff. Un module qui n'a rien à *faire* à l'ajout n'a pas sa place ici : autant créer
@@ -70,12 +82,14 @@ export interface AddonDescriptor<
    * Rejouable : appelée depuis un chemin qui peut être retenté après un échec réseau, elle doit
    * pouvoir s'exécuter deux fois sur la même offre sans dupliquer l'allocation — même exigence que
    * `ProvisioningDescriptor.create`.
+   *
+   * Le retour est optionnel : un module qui n'a rien à communiquer peut toujours ne rien rendre.
    */
   onAttach(
     ctx: HostContext,
     offeringId: string,
     subscription: AddonSubscriptionContext,
-  ): Promise<void>;
+  ): Promise<AddonOutcome | void>;
   /** Symétrique : libère ce que `onAttach` avait alloué. Même exigence d'idempotence. */
   onDetach(
     ctx: HostContext,

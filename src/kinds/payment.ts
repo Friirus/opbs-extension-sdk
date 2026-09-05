@@ -30,6 +30,22 @@ export interface PaymentCapabilities {
   methodSetup: boolean;
 }
 
+/**
+ * Aucune capacité. Même rôle que `NO_DNS_CAPABILITIES`/`NO_REGISTRAR_CAPABILITIES` : jusqu'ici
+ * chaque genre en avait redéfini une localement dans son fichier de test au lieu de l'exporter
+ * d'ici, et `provisioning.ts` l'exportait sous le nom générique `NO_CAPABILITIES`, jamais
+ * `NO_PROVISIONING_CAPABILITIES` — une incohérence sans conséquence pour un module tiers, qui n'a
+ * jamais besoin de ces constantes, mais qui gênait quiconque cherchait le même nom d'un genre à
+ * l'autre.
+ */
+export const NO_PAYMENT_CAPABILITIES: PaymentCapabilities = {
+  offSession: false,
+  refund: false,
+  webhook: false,
+  storedMethods: false,
+  methodSetup: false,
+};
+
 /** Ce qui est réglé, du point de vue du noyau. */
 export type PaymentPurpose = "invoice" | "order";
 

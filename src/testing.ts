@@ -82,6 +82,9 @@ export function createTestHost(options: TestHostOptions = {}): TestHostContext {
     async delete(key: string): Promise<void> {
       memory.delete(key);
     },
+    async keys(prefix: string): Promise<string[]> {
+      return [...memory.keys()].filter((key) => key.startsWith(prefix)).sort();
+    },
   };
 
   return {

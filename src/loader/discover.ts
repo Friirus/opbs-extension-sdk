@@ -43,6 +43,11 @@ export interface DiscoverOptions {
   dir: string;
   /** Version du contrat à confronter aux `engines.host`. Injectable pour les tests. */
   hostVersion?: string;
+  /**
+   * Plancher de compatibilité — `HOST_CONTRACT_COMPATIBLE_SINCE` par défaut. Injectable pour les
+   * tests, sur le même principe que `hostVersion`.
+   */
+  compatibleSince?: string;
   /** Chargement du code. Injectable pour les tests, `require` en production. */
   load?: (entryPath: string) => unknown;
 }
@@ -56,7 +61,7 @@ export interface DiscoverOptions {
  * continue de fonctionner — y compris d'encaisser.
  */
 export function discoverExtensions(options: DiscoverOptions): DiscoveredExtension[] {
-  const { dir, hostVersion, load = requireEntry } = options;
+  const { dir, hostVersion, compatibleSince, load = requireEntry } = options;
 
   let entries: string[];
   try {
@@ -77,7 +82,7 @@ export function discoverExtensions(options: DiscoverOptions): DiscoveredExtensio
       // un `node_modules` déposé à côté. Le signaler en erreur noierait les vraies erreurs.
       continue;
     }
-    found.push(inspect(moduleDir, name, hostVersion, load));
+    found.push(inspect(moduleDir, name, hostVersion, compatibleSince, load));
   }
   return found;
 }
@@ -94,6 +99,7 @@ function inspect(
   moduleDir: string,
   dirName: string,
   hostVersion: string | undefined,
+  compatibleSince: string | undefined,
   load: (entryPath: string) => unknown,
 ): DiscoveredExtension {
   // Le nom du dossier tient lieu d'identifiant tant que le manifeste n'a pas parlé : sans lui, un
@@ -124,7 +130,7 @@ function inspect(
     version: manifest.version,
   };
 
-  const incompatible = incompatibilityReason(manifest.engines.host, hostVersion);
+  const incompatible = incompatibilityReason(manifest.engines.host, hostVersion, compatibleSince);
   if (incompatible) {
     // Rien n'est chargé : c'est la raison d'être de la vérification. Un contrat changé ne se
     // manifeste pas par une erreur claire, mais par un `undefined` qui voyage jusqu'à
@@ -357,8 +363,13 @@ function asDescriptor(loaded: unknown, manifest: ExtensionManifest): ExtensionDe
  * Chargement réel.
  *
  * `require` et non `import()` : le noyau est compilé en CommonJS, et un `import()` dynamique y est
- * de toute façon retranscrit en `require`. L'annoncer ici évite qu'un auteur publie un module en
- * ESM pur et cherche pourquoi il ne se charge pas.
+ * de toute façon retranscrit en `require`. Depuis Node 22 (stable en 24, « require(esm) »), ce même
+ * `require` charge aussi un module ESM synchrone (`export default …`) sans changement de code ici —
+ * `asDescriptor` gère déjà l'interop `{ default }` que ce chargement produit. Seule limite : un
+ * module avec un `await` de premier niveau, que `require()` refuse par nature (il doit rendre
+ * synchrone). Non vérifiable depuis ce fichier de test : Jest a sa propre résolution de modules, qui
+ * ne connaît pas `.mjs` (`moduleFileExtensions` du `jest.config.js` du paquet) et échoue avant même
+ * d'atteindre Node — y compris via `createRequire`, qui reste soumis à la même interception.
  */
 function requireEntry(entryPath: string): unknown {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
