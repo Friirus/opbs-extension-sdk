@@ -873,8 +873,8 @@ motif. Il n'empêche jamais l'application de démarrer.
 ## Ce qui est promis
 
 `COMPATIBILITY.md` dit ce qui est stable, ce qui ne l'est pas encore, et ce qui ne le sera jamais.
-Le SDK d'extension y a sa propre section, avec la politique de version qui s'appliquera une fois
-qu'il sera publié.
+Le SDK d'extension y a sa propre section, avec la politique de version qui s'applique depuis sa
+publication sur npm (`@opbs/extension-sdk`, 2026-09-05).
 
 ## Vos droits sur votre module
 

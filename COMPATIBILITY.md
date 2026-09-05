@@ -93,7 +93,8 @@ Tout ce qui n'est pas listé ci-dessus. Explicitement, et sans que la liste soit
   web du produit et suivent leurs besoins.
 - **Le schéma de base de données.** Noms de tables, de colonnes, énumérations, index. Il change à
   chaque migration.
-- **Les paquets `@opbs/*`.** Ils sont `private` et internes au dépôt.
+- **Les autres paquets `@opbs/*`.** Ils restent `private` et internes au dépôt — seul
+  `@opbs/extension-sdk` est publié (voir plus bas).
 - **La structure des fichiers**, les noms de modules NestJS, les files d'attente BullMQ.
 
 ## Identifiants de modules réservés
@@ -127,8 +128,8 @@ ne risque rien.
 
 ## Règles d'évolution de ce qui est public
 
-Ces quatre règles gouvernent l'API REST dès aujourd'hui, et gouverneront `@opbs/extension-sdk`
-dès qu'il rejoindra ce niveau (voir plus bas) — un seul jeu de règles, pas un par surface publique.
+Ces quatre règles gouvernent l'API REST et `@opbs/extension-sdk` (voir plus bas) — un seul jeu de
+règles, pas un par surface publique.
 
 1. **Purement additif en version mineure.** On ajoute des champs et des routes. On ne retire pas, on
    ne renomme pas, et surtout **on ne recycle pas** un champ existant pour un sens nouveau : c'est
@@ -152,14 +153,17 @@ suivre chaque mise à jour du noyau.
 C'est un choix : la soupape évite que chaque développeur bloqué devienne une demande d'engagement
 supplémentaire, et elle ne coûte aucune promesse.
 
-## À venir : `@opbs/extension-sdk`
+## `@opbs/extension-sdk`
 
-Le SDK d'extension sera publié en semver et rejoindra le niveau « public et stable » de ce document.
+Le SDK d'extension est publié sur npm sous licence MIT depuis le 2026-09-05, en semver `0.x`. Le
+miroir public en lecture seule est `Friirus/opbs-extension-sdk` ; la source de vérité reste
+`packages/extension-sdk/` dans ce dépôt, qui la synchronise à chaque push sur `main`.
 
 **Il n'est pas encore figé.** Le contrat a été éprouvé sur trois passerelles de paiement réelles,
 mais sur un seul hyperviseur : le second, qui devait le confronter à autre chose que Proxmox, a été
 reporté faute de simulateur vSphere REST utilisable. Sa surface peut donc encore changer. Un
-contrat publié ne se corrige plus sans casser tout le monde : mieux vaut le figer tard et bien.
+contrat publié ne se corrige plus sans casser tout le monde qui l'a déjà installé : mieux vaut le
+figer tard et bien.
 
 En attendant, la discipline `0.x` s'applique pour de bon : `HOST_CONTRACT_VERSION`
 (`packages/extension-sdk/src/version.ts`) suit chaque modification de la surface, `CHANGELOG.md` la
@@ -171,10 +175,9 @@ qui n'affectent rien de ce qu'il utilise. Cette mécanique a existé sur le papi
 pratique : la constante est restée à `0.1.0` du 2 au 17 août 2026 pendant que le contrat gagnait
 deux genres entiers.
 
-### Ce que le semver signifiera
+### Ce que le semver signifie
 
-Écrit maintenant, appliqué à partir de la publication — pas avant, et cette section ne prétend pas
-que le SDK est prêt aujourd'hui.
+Applicable depuis la publication du 2026-09-05.
 
 - **Majeure** : un descripteur qui compilait ou se chargeait cesse de le faire. Retirer un genre,
   rendre un champ optionnel obligatoire, changer la signature d'une méthode existante, renommer
@@ -533,10 +536,9 @@ rejouer localement ce que verrait une instance au démarrage.
 
 ### Le nom du scope fait partie du contrat
 
-`@opbs` n'est pas le nom définitif du produit, et **le renommer doit se faire avant cette
-publication**. Aujourd'hui c'est un remplacement mécanique : tous les paquets sont `private`, et la
-base de données ne porte aucun nom de produit — rien à migrer.
+Le renommage en `@opbs` a été fait avant cette publication (2026-08-29) — c'est donc sous ce nom,
+définitif, que le SDK a été publié sur npm le 2026-09-05.
 
-Une fois le SDK publié, le scope vit dans le `import` et le `package.json` de chaque module tiers.
-Le changer devient une rupture pour l'écosystème entier, sans autre voie de sortie que publier les
-deux scopes en parallèle pendant une version majeure.
+Le scope vit désormais dans l'`import` et le `package.json` de chaque module tiers. Le changer
+serait une rupture pour l'écosystème entier, sans autre voie de sortie que publier les deux scopes
+en parallèle pendant une version majeure.
