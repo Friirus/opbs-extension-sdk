@@ -112,14 +112,21 @@ place, à la mise à jour. D'où cette liste, et le contrôle `pnpm check-mirror
 |---|---|
 | `bank-transfer` | payment |
 | `classic` | theme |
+| `coinbase-commerce` | payment |
 | `cpanel` | provisioning |
 | `discord` | notification |
+| `dlocalgo` | payment |
 | `encre` | theme |
 | `manual` | provisioning |
 | `manual-registrar` | registrar |
+| `mercadopago` | payment |
+| `midtrans` | payment |
+| `mollie` | payment |
 | `paypal` | payment |
+| `payu-europe` | payment |
 | `powerdns` | dns |
 | `proxmox-ve` | provisioning |
+| `razorpay` | payment |
 | `smtp` | notification |
 | `stripe` | payment |
 
