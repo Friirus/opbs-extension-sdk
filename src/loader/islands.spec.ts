@@ -54,6 +54,39 @@ describe("inspectThemeTemplates", () => {
     expect(finding?.unknownIslands).toEqual(["langue-switcher"]);
   });
 
+  /**
+   * Le chemin d'un `{% render %}` part de la racine du thème, pas du gabarit qui l'écrit. En
+   * relatif — le réflexe de qui vient de Jekyll —, LiquidJS lève un `ENOENT` : le noyau retombe
+   * sur son écran React et la page reste présentable, sans qu'une seule ligne du thème ne
+   * s'affiche. C'est arrivé sur un thème d'exemple de ce dépôt, et `check-extension` répondait
+   * « OK » pendant que la vitrine entière était revenue au rendu d'origine.
+   */
+  it("relève un partial dont le chemin ne part pas de la racine du thème", () => {
+    const root = themeWith({
+      "pages/home.liquid": '{% render "partials/icon", name: "server" %}',
+      "partials/icon.liquid": "<svg></svg>",
+    });
+
+    expect(inspectThemeTemplates(root)[0]?.missingPartials).toEqual(["partials/icon"]);
+  });
+
+  it("ne relève rien quand le chemin est correct, avec ou sans extension", () => {
+    const root = themeWith({
+      "pages/home.liquid":
+        '{% render "templates/partials/icon" %}{% include "templates/partials/icon.liquid" %}',
+      "partials/icon.liquid": "<svg></svg>",
+    });
+
+    expect(inspectThemeTemplates(root)[0]?.missingPartials).toEqual([]);
+  });
+
+  /** Une cible calculée sort d'un contrôle statique : la signaler produirait une fausse alerte. */
+  it("ignore un render dont la cible est une variable", () => {
+    const root = themeWith({ "pages/home.liquid": "{% render page.template %}" });
+
+    expect(inspectThemeTemplates(root)[0]?.missingPartials).toEqual([]);
+  });
+
   it("signale un gabarit qui ne correspond à aucune vue", () => {
     const root = themeWith({ "pages/blogue.liquid": "<h1>Actualités</h1>" });
 

@@ -507,7 +507,35 @@ Un thème livre des gabarits Liquid évalués à la requête. Trois formes de co
 SDK aux côtés de `ThemeDefinition` :
 
 - `ThemeShellContext` — passé à l'enveloppe (`templates/partials/header.liquid`, `footer.liquid`) :
-  `companyName`, `logoUrl?`, `nav`, `area` (`"marketing"` ou `"account"`), `authenticated`.
+  `companyName`, `logoUrl?`, `nav`, `legalLinks`, `area` (`"marketing"` ou `"account"`),
+  `authenticated`, `settings`, et sur la vitrine `catalogFamilies`. Depuis 0.34.0 :
+  `supportEmail?` (adresse de support de Paramètres › Identité ; sous la marque d'un revendeur, la
+  sienne, jamais celle de l'hébergeur) et `statusPageUrl?` (page de statut publique,
+  absente quand l'instance n'en publie pas et sous une marque de revendeur). `authenticated` est
+  exact aussi en vitrine — vrai quand le visiteur a une session —, et ne sert qu'à l'affichage
+  (« Mon espace » plutôt que « Connexion ») : ce qu'il masque reste joignable.
+
+  **`legalLinks` n'est pas facultatif à rendre.** Il porte les documents légaux que l'hébergeur a
+  effectivement publiés (mentions légales, CGV, confidentialité, remboursement, cookies). Sur la
+  vitrine, dès que votre thème fournit `partials/footer.liquid`, le portail cesse de rendre le
+  sien : un pied de page qui ignore ce tableau rend introuvables des documents que la loi impose de
+  rendre accessibles, sur toutes les instances qui installeront votre thème.
+
+  **Votre enveloppe est aussi rendue dans l'espace client** (depuis 0.34.0), avec `area` à
+  `"account"`. Le noyau n'y garde ses propres éléments que là où le vôtre ne fait pas le travail :
+  sa navigation si votre en-tête ne rend rien dans cette zone, son bouton de déconnexion et son
+  sélecteur de langue si vous n'y placez pas les îlots `logout` et `language-switcher`, et son pied
+  de page — sous le vôtre — tant que votre pied ne pose pas `cookie-preferences` et un lien vers
+  chaque document publié. Un doublon vaut mieux qu'une CGV introuvable pour le client connecté.
+
+  ```liquid
+  {% if legalLinks.size > 0 %}
+    {% for link in legalLinks %}<a href="{{ link.href }}">{{ link.label }}</a>{% endfor %}
+  {% endif %}
+  ```
+
+  Le tableau est vide sur une instance qui n'a rien rédigé — testez `size`, comme ci-dessus, plutôt
+  que de rendre une barre vide.
 - `ThemeViewContext` — passé à un gabarit de vue (`templates/pages/<nom>.liquid`) : `view` (le nom
   de la vue), `companyName`, `locale`, plus ce que la vue apporte. **Type ouvert, et le registre
   `THEME_VIEWS` fait foi** — pas une union fermée qu'il faudrait modifier pour rendre une page de
@@ -520,28 +548,66 @@ Jamais de page blanche, et surtout : rien n'oblige à tout convertir pour publie
 sépare ce système de celui de WHMCS, où un thème est une copie complète des gabarits du noyau, à
 refusionner à chaque mise à jour.
 
-### Les 42 vues
+### Les 46 vues
 
-Neuf pour la vitrine, vingt-cinq pour l'espace client, huit pour l'authentification. C'est tout le
+Douze pour la vitrine, vingt-six pour l'espace client, huit pour l'authentification. C'est tout le
 portail : aucune page ne reste hors de portée d'un thème.
 
 #### Vitrine
 
 | Vue | Gabarit | Reçoit | Îlots obligatoires |
 |---|---|---|---|
-| `home` | `pages/home.liquid` | — | — |
+| `home` | `pages/home.liquid` | `sections`, `bundles`, `commitments` | — |
 | `catalog` | `pages/catalog.liquid` | `sections`, `bundles` | `order-button` |
 | `cart` | `pages/cart.liquid` | — | `cart` |
 | `domains` | `pages/domains.liquid` | — | `domain-search` |
 | `kb` | `pages/kb.liquid` | `articles`, `tags`, `query`, `activeTag`, `pagination` | — |
-| `kb-article` | `pages/kb-article.liquid` | `article` | — |
+| `kb-article` | `pages/kb-article.liquid` | `article` (`slug`, `title`, `body`, `bodyHtml`, `metaDescription`, `tags`, `updatedAtFormatted`) | — |
 | `legal-privacy` | `pages/legal-privacy.liquid` | `privacyPolicy`, `address`, `contactEmail?` | — |
 | `legal-terms` | `pages/legal-terms.liquid` | `termsBody`, `termsUrl` | — |
+| `legal-notice` | `pages/legal-notice.liquid` | `body`, `identity`, `contactEmail?` | — |
+| `legal-refund` | `pages/legal-refund.liquid` | `body`, `identity`, `contactEmail?` | — |
+| `legal-cookies` | `pages/legal-cookies.liquid` | `body`, `identity`, `contactEmail?` | — |
 | `content-page` | `pages/content-page.liquid` | `page` (`slug`, `title`, `blocks`) | — |
+
+Les trois dernières partagent un seul contexte (`ThemeLegalDocumentView`) : elles n'affichent qu'un
+texte publié, et `view` suffit à les distinguer. `body` vaut `nil` tant que l'hébergeur n'a rien
+rédigé — testez `{% if body != blank %}`, jamais `{% if body %}` : en Liquid, une chaîne vide est
+vraie.
+
+**Le corps d'un article** (`kb-article`) est du Markdown limité, saisi au panel, que le noyau vous
+remet sous deux formes. Depuis 0.35.0 :
+
+- **`article.bodyHtml`** est le corps rendu en HTML : `{{ article.bodyHtml }}`, sans `| raw`. C'est
+  l'une des trois valeurs que le moteur n'échappe pas (voir « Le rendu échappe tout »), parce que le
+  noyau l'a construite. Aucune balise n'y vient de la saisie — un `<script>` écrit dans un article
+  y reste du texte —, et seuls ces éléments peuvent apparaître : `h2`, `h3`, `h4` (chacun avec un
+  `id` préfixé `kb-`, comme `kb-pour-commencer`, pour les liens d'ancre : le préfixe évite qu'un
+  titre « Main content » reprenne l'`id` du lien d'évitement du portail), `p`, `ul`, `ol` (avec
+  `start` s'il diffère de 1), `li`, `blockquote` qui contient un `p`, `pre` > `code` (avec `class="language-<langue>"` quand la
+  langue est connue), `hr`, `strong`, `em`, `code`, `br`, `a` (avec `rel="noopener noreferrer"` et
+  `target="_blank"` sur un lien externe) et `img` (une image téléversée au panel, `loading="lazy"`).
+  Le titre de l'article est le `h1` de la page : il n'y en a pas dans le corps. **Le noyau ne style
+  rien** : c'est à votre thème de mettre en forme cette prose, en bornant ses sélecteurs à
+  l'élément qui l'enveloppe — voir `kb-article.liquid` dans `theme-argile`.
+- **`article.body`** est le texte source (le Markdown), échappé comme toute valeur. Ne l'affichez
+  plus pour lire l'article : `## Titre` et `**gras**` y apparaîtraient tels quels. Un gabarit écrit
+  contre 0.34.0, qui l'affichait en `white-space: pre-wrap`, continue de se rendre, mais le
+  balisage des articles qui en utilisent devient visible : passez à `bodyHtml`.
+- **`article.metaDescription`** est la description que le rédacteur a saisie pour les moteurs de
+  recherche, sinon un extrait du corps (160 caractères au plus). Texte brut, échappé ; vide pour un
+  article sans texte, d'où `{% if article.metaDescription != blank %}`.
+
+Un thème qui utilise `bodyHtml` ou `metaDescription` déclare `engines.host: "^0.35.0"` : sur un noyau
+plus ancien, le champ n'existe pas et l'article se rendrait vide.
+
+Chaque offre (`ThemeProductView`, dans `sections[].products` comme dans `catalogFamilies`) porte
+`featured` depuis 0.34.0 : vrai pour celle que l'hébergeur a cochée « mettre en avant » dans le
+formulaire produit, toujours présent, `false` par défaut. Le libellé du badge est le vôtre.
 
 #### Espace client
 
-Ces vingt-cinq vues ne diffèrent des précédentes que sur un point, invisible depuis un gabarit :
+Ces vingt-six vues ne diffèrent des précédentes que sur un point, invisible depuis un gabarit :
 leur contexte est assemblé par la page qui les rend, pas par l'API seule — c'est la seule façon
 d'avoir les données du client connecté, déjà mises en forme dans **sa** langue et **sa** devise.
 Pour vous, rien ne change : mêmes gabarits, même repli vue par vue, mêmes îlots.
@@ -550,21 +616,21 @@ Pour vous, rien ne change : mêmes gabarits, même repli vue par vue, mêmes îl
 |---|---|---|
 | `dashboard` | `counters`, `recentServices`, `recentInvoices` | — |
 | `services` | `services`, `pagination` | — |
-| `service` | `service`, `capabilities` | `service-actions` |
+| `service` | `service`, `capabilities` | `service-actions`, `service-credentials`, `service-reinstall`, `service-snapshots`, `service-backups`, `service-reverse-dns`, `service-plan-change`, `service-addons`, `service-monitoring`, `service-early-renewal`, `service-cancellation` |
 | `service-console` | `service` | `service-console` |
 | `invoices` | `invoices`, `creditBalances`, `pagination` | — |
 | `invoice` | `invoice` (avec `items`) | `invoice-pay` |
 | `tickets` | `tickets`, `newTicketHref`, `pagination` | — |
-| `ticket` | `ticket` (avec `messages`, `satisfaction`) | `ticket-reply` |
+| `ticket` | `ticket` (avec `messages`, `satisfaction`) | `ticket-reply`, `ticket-satisfaction` |
 | `ticket-new` | `departments`, `ticketsHref` | `ticket-new-form` |
 | `domains-mine` | `domains`, `pagination` | — |
 | `domain` | `domain` | `domain-settings` |
 | `dns-zones` | `zones`, `pagination` | `dns-create-zone` |
-| `dns-zone` | `zone` (avec `records`) | `dns-records-editor` |
+| `dns-zone` | `zone` (avec `records`) | `dns-records-editor`, `dns-use-host-ns`, `dns-delete-zone` |
 | `history` | `entries`, `pagination` | — |
 | `account` | `sections` | — |
 | `account-profile` | `email` | `account-change-email` |
-| `account-security` | `isOwner`, `twoFactorEnabled`, `passkeyCount`, `linkedSsoCount`, `availableSsoProviders` | `account-change-password` |
+| `account-security` | `isOwner`, `twoFactorEnabled`, `passkeyCount`, `linkedSsoCount`, `availableSsoProviders` | `account-change-password`, `account-two-factor`, `account-passkeys`, `account-sso`, `account-anti-phishing` |
 | `account-billing` | `billing`, `baseCurrency`, `currencies` | `account-billing-identity` |
 | `account-payment-methods` | `methods`, `gateways`, `canManage`, `justAdded` | `account-payment-methods` |
 | `account-privacy` | `pendingErasure`, `requests` | `account-privacy` |
@@ -574,6 +640,11 @@ Pour vous, rien ne change : mêmes gabarits, même repli vue par vue, mêmes îl
 | `reseller-client` | `client` | `reseller-order-for-client` |
 | `reseller-client-new` | `clientsHref` | `reseller-create-client` |
 | `reseller-branding` | `isReseller`, `domain` | `reseller-branding` |
+
+**Tout îlot qui est le seul chemin vers une fonction est obligatoire** (0.34.0). Un thème de
+référence ne posait sur `service` que `service-actions` : sous lui, un client ne pouvait ni
+réinstaller, ni résilier, ni gérer sa 2FA, et rien à l'écran ne le signalait. Vous placez ces îlots
+où vous voulez — un onglet, un repli `<details>`, le bas de page —, vous ne les retirez pas.
 
 #### Authentification
 
@@ -614,8 +685,9 @@ n'existera jamais :
    l'instant du rendu : un gabarit Liquid n'a pas de quoi les produire.
 2. **Ce qui est secret n'y est pas.** Ni jeton de session, ni phrase anti-hameçonnage, ni secret
    2FA. Ce qu'un formulaire a besoin de connaître va à son îlot, jamais au gabarit.
-3. **Les libellés restent les vôtres.** Le noyau ne vous fournit pas de dictionnaire ; `locale` vous
-   dit dans quelle langue rendre — `{% if locale == "en" %}Invoices{% else %}Factures{% endif %}`.
+3. **Les libellés restent les vôtres.** Le noyau ne vous fournit pas de dictionnaire : le vôtre
+   (`locales/<langue>.json`) arrive sous `t`, dans la langue de la page — voir « Traduire les
+   libellés d'un thème ». `locale` reste là pour un gabarit qui veut choisir lui-même.
 
 La question longtemps laissée ouverte — ce qu'un thème peut placer autour d'un formulaire
 d'authentification sans jamais pouvoir l'écrire lui-même — est tranchée depuis `0.19.0`, et sa
@@ -736,8 +808,13 @@ soumission et leur redirection compilées. Vous placez le champ de mot de passe,
 pas, et vous ne recevez pas le jeton qui accompagne un lien de réinitialisation.
 
 **Vitrine** (`THEME_ISLANDS`) : `order-button` (`data-product`), `bundle-order-button`
-(`data-bundle`), `cart`, `domain-search`, `language-switcher`. Les trois derniers ne prennent aucun
-paramètre. `language-switcher` s'utilise aussi dans l'enveloppe.
+(`data-bundle`), `cart`, `domain-search`, `language-switcher`, `cookie-preferences`. Les quatre
+derniers ne prennent aucun paramètre, et les deux derniers s'utilisent aussi dans l'enveloppe.
+
+`cookie-preferences` rouvre le choix de consentement aux traceurs. **Placez-le dans votre pied de
+page**, à côté de `legalLinks` : le portail rend le sien tant qu'aucun thème ne fournit
+`partials/footer.liquid`, et l'oublier retire au visiteur son seul moyen de revenir sur sa réponse.
+Un consentement qu'on ne peut pas retirer n'en est pas un.
 
 **Espace client** : `logout` · `invoice-pay` (`data-invoice`) · `service-actions`,
 `service-credentials`, `service-reinstall`, `service-snapshots`, `service-backups`,
@@ -764,18 +841,533 @@ Deux choses à savoir sur les îlots d'espace client :
   qu'échouer en 401 sous les yeux du visiteur, et un formulaire de réinitialisation y serait privé
   du jeton qui le rend utilisable.
 
+`logout` et `language-switcher` se placent dans l'enveloppe. Le noyau pose les siens tant que votre
+en-tête ou votre pied ne les rend pas — le marqueur doit figurer dans le HTML rendu : écrit sous une
+condition fausse ou dans un commentaire, il ne compte pas.
+
+Pour `language-switcher`, ne laissez pas le repli faire le travail : c'est un bloc flottant
+(`position: fixed`, en haut à droite) qui se pose par-dessus ce que votre en-tête y a mis. Le thème
+`classic` a eu ce défaut, son sélecteur recouvrait son propre lien « Connexion ».
+
 `account-change-password` mérite une phrase, parce qu'il paraît contredire la règle : c'est un
 composant **de l'hôte** que vous placez, exactement comme `order-button`. Ce qui reste interdit est
 qu'un gabarit écrive lui-même un champ de mot de passe.
 
 `pnpm check-extension` refuse un gabarit qui oublie un îlot obligatoire ou qui en nomme un
 inexistant. C'est le seul défaut de ce système qu'une relecture visuelle ne rattrape pas : un
-catalogue sans `order-button` s'affiche parfaitement et ne vend rien.
+catalogue sans `order-button` s'affiche parfaitement et ne vend rien. Le noyau, lui, ne vérifie
+pas les îlots au chargement — un thème qui les oublie se charge, et prive le client de la fonction
+sans un message.
+
+### Donner une page de configuration à son thème
+
+`theme.settings` dans le manifeste déclare ce que l'hébergeur pourra modifier **depuis le panel**,
+sans toucher un fichier. Ce sont les mêmes `ConfigField` que la configuration d'un module, donc la
+même validation — et `group` les range en sections, que `settingGroups` décrit (voir « Sections,
+sous-groupes et blocs ») :
+
+```json
+"settings": [
+  { "name": "heroTitle", "label": "Titre", "type": "textarea", "required": false,
+    "group": "Accueil", "maxLength": 90, "defaultValue": "Vos serveurs, prêts en une minute" },
+  { "name": "heroImage", "label": "Image", "type": "image", "required": false, "group": "Accueil" },
+  { "name": "showSteps", "label": "Afficher les étapes", "type": "boolean", "required": false,
+    "group": "Accueil", "defaultValue": "true" }
+]
+```
+
+Les valeurs arrivent dans **tous** les contextes — enveloppe, vues de la vitrine, vues de l'espace
+client, pages du thème — sous `settings` :
+
+```liquid
+<h1>{{ settings.heroTitle }}</h1>
+{% if settings.showSteps %}…{% endif %}
+{% if settings.heroImage %}<img src="{{ settings.heroImage }}" alt="{{ settings.heroImageAlt }}">{% endif %}
+```
+
+Trois règles à connaître :
+
+- **La déclaration en cours fait loi.** Un réglage que le thème ne déclare plus disparaît du
+  contexte, même si une valeur traîne en base.
+- **Un champ vide prend son `defaultValue`.** Un hébergeur qui efface un titre revient au texte
+  d'origine, il n'obtient pas un trou.
+- **Les booléens sont de vrais booléens.** Un formulaire HTML envoie `"false"`, qui est *vrai* en
+  Liquid : le noyau convertit, sans quoi décocher une case allumerait la section.
+
+Deux attributs servent surtout aux thèmes :
+
+- **`type: "image"`** : l'hébergeur téléverse une image depuis le panel, ou en colle l'adresse. La
+  valeur reste une adresse, à écrire telle quelle dans un `src`. Ce type n'existe que pour les
+  thèmes.
+- **`maxLength`** : le panel affiche un compteur et le noyau refuse une valeur plus longue. À
+  déclarer sur tout texte que votre mise en page ne tient pas au-delà d'une certaine longueur.
+
+Une valeur `url` ou `image` qui n'est ni `https:`, ni `http:`, ni un chemin du site (`/catalog`)
+n'arrive jamais au gabarit : Liquid échappe le HTML, pas le protocole, et un `javascript:` dans un
+`href` s'exécuterait.
+
+`password` et `provider` sont refusés — un thème n'exécute aucun code, il n'a ni secret à garder ni
+fournisseur à piloter — et `pnpm check-extension` le dit, comme il refuse un nom en doublon ou un
+`select` sans option.
+
+#### Des réglages qui atteignent la feuille de style (0.33.0)
+
+Jusqu'ici, un réglage n'arrivait qu'aux gabarits : une couleur choisie au panel n'avait aucun chemin
+vers le CSS. Deux liaisons le lui donnent, au choix sur chaque champ :
+
+- **`token`** remplace un token du thème — `"colors.primary"`, `"radii.md"`,
+  `"typography.headingFamily"`, `"density"`, `"colorScheme"`… Empilement, du plus faible au plus
+  fort : défauts du noyau, tokens du manifeste, réglages publiés du thème, marque d'un revendeur
+  (sur ses domaines et pour ses clients seulement). Paramètres › Identité ne porte plus ni couleur
+  ni police depuis 0.34.0 : sur l'instance de l'hébergeur, votre réglage a le dernier mot. Passer
+  par un token, c'est hériter de tout ce que le noyau en dérive : la couleur lisible sur un aplat
+  (`--brand-color-on-primary`), l'échelle d'espacement d'une densité. L'assistant d'installation
+  écrit la couleur principale qu'il demande dans le réglage `color` lié à `colors.primary` (palette
+  claire) : déclarez-en un si votre thème veut la recevoir.
+- **`cssVar`** pose une variable propre au thème (`"--ag-hero-tint"`), émise dans le même bloc
+  `:root`. Pour ce qu'aucun token ne décrit. Les préfixes du noyau (`--brand-`, `--radius-`,
+  `--space-`, `--font-size-`, et depuis 0.34.0 `--shadow-` et `--layout-`) sont refusés. Sans
+  valeur, la variable n'est pas émise : écrivez `var(--ag-hero-tint, var(--brand-color-primary))`
+  et le repli s'applique.
+
+Et les types et attributs qui vont avec :
+
+- **`type: "color"`** : sélecteur de couleur, hexadécimal (`#rrggbb`) et rien d'autre ; le panel
+  mesure le contraste pendant que l'hébergeur choisit.
+- **`type: "order"`** : l'ordre d'une liste fermée (`options`), pour placer les blocs d'une page.
+  La valeur est `"families,steps,account"`, toujours **complète** — un bloc ajouté par une mise à
+  jour du thème apparaît en fin, jamais perdu — et un gabarit la lit par `split` :
+
+  ```liquid
+  {% assign order = settings.homeOrder | split: "," %}
+  {% for block in order %}{% case block %}
+    {% when "families" %}…{% when "steps" %}…
+  {% endcase %}{% endfor %}
+  ```
+
+  Chaque option peut porter `visibleWhen` : le panel marque « masqué » un bloc dont l'interrupteur
+  est décoché, sans le retirer de la liste. Nommez les options par ce que le visiteur lit (« Déroulé
+  — “De la commande à la mise en service” »), pas par un nom interne : l'hébergeur doit
+  reconnaître le bloc sur sa page.
+- **`min` / `max` / `step` / `unit`** sur un `number` : avec `min` et `max`, un curseur ; `unit`
+  (`px`, `rem`, `%`…) est accolée à la valeur quand le champ est lié à un token ou une variable, et
+  obligatoire dans ce cas — sauf pour les tokens sans unité (`typography.lineHeight`,
+  `headingLineHeight`, `headingScale`), où elle est au contraire refusée. Le gabarit reçoit le
+  nombre nu.
+- **`visibleWhen: { "field": "showSteps", "equals": "true" }`** : le champ n'apparaît au panel que si
+  la condition tient. Pur confort d'écran — la valeur est conservée et le gabarit la reçoit
+  toujours. Opérateurs et combinaisons : voir « Conditions composables ».
+- **`options[].sets`** : un choix qui remplit d'autres champs (`{ "value": "nuit", "label": "Nuit",
+  "sets": { "colorPrimary": "#9dc3a8", … } }`) — une palette. Le panel applique, les champs remplis
+  restent modifiables un à un ; le noyau n'en sait rien.
+
+Et pour écrire du vrai contenu d'hébergeur dans un thème :
+
+- **`type: "list"`** : une liste d'éléments, chacun composé des sous-champs de `fields` (`text`,
+  `textarea`, `number`, `boolean`, `select`, `url`, `image`, `color`, `link`), bornée par `maxItems`.
+  L'hébergeur ajoute, retire et ordonne les éléments au panel ; le gabarit reçoit un tableau
+  d'objets. `defaultValue` porte le **contenu d'origine du thème**, en JSON — c'est ce qui permet
+  de livrer quatre étapes rédigées et de les laisser réécrire, au lieu d'afficher un trou sur une
+  instance neuve. Une liste que l'hébergeur vide reste vide : « rien en base » prend le défaut,
+  « `[]` en base » est un choix. Le gabarit teste donc toujours la taille avant de rendre sa
+  section :
+
+  ```json
+  { "name": "steps", "label": "Étapes", "type": "list", "required": false, "maxItems": 6,
+    "fields": [{ "name": "title", "label": "Titre", "type": "text", "required": false }],
+    "defaultValue": "[{\"title\":\"Vous choisissez\"},{\"title\":\"Vous réglez\"}]" }
+  ```
+
+  ```liquid
+  {% if settings.steps.size > 0 %}
+  {% for step in settings.steps %}<h3>{{ forloop.index }}. {{ step.title }}</h3>{% endfor %}
+  {% endif %}
+  ```
+
+  Un sous-champ `select` dont les options sont les noms de votre jeu d'icônes donne un choix
+  d'icône par élément — le noyau n'a pas de type `icon`, et redessiner vos icônes pour les
+  prévisualiser au panel créerait un miroir de plus à tenir à jour.
+
+- **`localized: true`** sur un `text` ou `textarea` (au premier niveau ou dans une liste) : une
+  valeur par langue de l'instance, saisie par onglets au panel. Le gabarit reçoit **une** chaîne :
+  celle de la langue de la page, sinon celle de la langue par défaut de l'instance, sinon la
+  première renseignée, sinon `defaultValue`. La langue de la page est celle du visiteur, relayée
+  par le portail (`?locale=`) sur l'enveloppe, les vues publiques et les pages du thème — le
+  contexte `locale` la porte aussi, pour un gabarit qui écrit lui-même deux langues.
+
+#### Sections, sous-groupes et blocs (0.34.0)
+
+`group` range un réglage dans une section ; `theme.settingGroups` décrit ces sections — leur ordre
+dans le rail du panel, une description, une catégorie (`appearance` ou `content`, défaut
+`content`) et la page que l'aperçu ouvre :
+
+```json
+"settingGroups": [
+  { "name": "Couleurs", "category": "appearance", "description": "Palette claire et sombre." },
+  { "name": "Accueil", "category": "content", "previewPath": "/", "texts": ["heroKicker"] }
+],
+"settings": [
+  { "name": "colorPrimaryDark", "label": "Couleur principale", "type": "color", "required": false,
+    "group": "Couleurs", "subgroup": "Mode sombre", "token": "colors.primary", "scheme": "dark" },
+  { "name": "homeOrder", "label": "Blocs de la page", "type": "order", "required": false,
+    "group": "Accueil", "defaultValue": "hero,steps",
+    "options": [
+      { "value": "hero", "label": "Bandeau" },
+      { "value": "steps", "label": "Étapes", "visibleWhen": { "field": "showSteps", "equals": "true" } }
+    ] },
+  { "name": "showSteps", "label": "Afficher les étapes", "type": "boolean", "required": false,
+    "group": "Accueil", "defaultValue": "true" },
+  { "name": "stepsTitle", "label": "Titre", "type": "text", "required": false,
+    "group": "Accueil", "block": "steps" }
+]
+```
+
+- `name` est la valeur de `group` : une chaîne source du manifeste, jamais traduite (le panel reçoit
+  le libellé traduit à côté). Une section déclarée reste dans le rail même quand tous ses champs
+  sont masqués.
+- **`subgroup`** range un réglage sous un intertitre repliable de sa section. Il exige `group` et
+  exclut `block`.
+- **`block`** rattache un réglage à un élément d'un `order` de la même section — la `value` d'une de
+  ses options. Le panel rend alors l'`order` en blocs dépliables, réordonnables au glisser-déposer
+  comme au clavier, chacun portant ses réglages ; le booléen que vise le `visibleWhen` d'une option
+  devient l'interrupteur de son bloc. Un `order` ne porte lui-même ni `block` ni `subgroup`.
+- `texts` nomme les textes du thème que la section affiche (voir « Les textes du thème »).
+
+`pnpm check-extension` refuse un renvoi vers une section ou un bloc inexistant, une section en
+double, une `category` inconnue, et avertit d'une section déclarée qu'aucun réglage ne nomme.
+
+#### Conditions composables (0.34.0)
+
+Une condition nomme un champ et **un seul** opérateur : `equals`, `notEquals` ou `in` (liste non
+vide). `visibleWhen` — sur un champ comme sur une option d'`order` — accepte aussi un tableau, dont
+toutes les conditions doivent tenir :
+
+```json
+"visibleWhen": [
+  { "field": "heroStyle", "in": ["image", "split"] },
+  { "field": "showHero", "notEquals": "false" }
+]
+```
+
+Les valeurs se comparent en texte : un booléen vaut `"true"` ou `"false"`. La visibilité est
+**transitive** — un champ dont le champ de référence est masqué l'est aussi — et une boucle masque
+ses membres au lieu de faire tourner le panel. Une condition mal formée (aucun ou plusieurs
+opérateurs, `in` vide, `field` absent) est écartée sans refuser le thème, et `check-extension` la
+signale avec les renvois vers un champ inconnu et les boucles. `isConfigFieldVisible(field, fields,
+values)` est la fonction pure que le panel et le noyau appliquent, exportée par le SDK.
+
+#### Liens, polices, texte riche (0.34.0)
+
+- **`type: "link"`** : une destination de navigation — chemin du site (`/catalog`), `https:`,
+  `http:`, `mailto:` ou `tel:` —, là où `url` désigne une ressource. Le panel propose les pages de
+  la vitrine, celles de l'hébergeur et celles du thème, ou une adresse libre. Un seul validateur,
+  `isSafeLinkValue` (ni blanc, ni caractère de contrôle, ni barre oblique inverse, jamais `//hote`),
+  appliqué par le panel, l'API et les blocs des pages de contenu. Admis en sous-champ de liste.
+- **`type: "font"`**, liable à `typography.fontFamily` ou `headingFamily` : la valeur est une des
+  `options` du champ — une pile de familles que votre thème livre — ou une police que l'hébergeur a
+  téléversée au panel (WOFF2, licence de diffusion web confirmée à l'envoi). Vous n'avez rien à
+  prévoir pour ces dernières : le noyau émet leurs `@font-face` après les vôtres.
+
+  ```json
+  { "name": "fontHeading", "label": "Police des titres", "type": "font", "required": false,
+    "group": "Typographie", "token": "typography.headingFamily",
+    "defaultValue": "\"Instrument Sans\", system-ui, sans-serif",
+    "options": [{ "value": "\"Instrument Sans\", system-ui, sans-serif", "label": "Instrument Sans" }] }
+  ```
+- **`format: "markdown"`** sur un `textarea` (ou un sous-champ `textarea`) : paragraphes, sauts de
+  ligne, gras, italique, liens et listes, rien d'autre — pas de titre, pas d'image, pas de HTML. Le
+  panel affiche une barre d'édition et un aperçu ; le gabarit applique le filtre `markdown`, seul
+  filtre du moteur qui produise du HTML, à partir d'un texte qu'il a lui-même échappé :
+
+  ```liquid
+  <div class="intro">{{ settings.intro | markdown }}</div>
+  ```
+
+  La sortie commence par une balise de bloc (`<p>`, `<ul>`, `<ol>`) : placez le filtre dans un
+  élément qui peut la contenir, jamais dans un attribut ni dans une balise ouverte, ce que
+  `check-extension` signale. Les liens ne passent que s'ils sont sûrs, et reçoivent
+  `rel="noopener noreferrer"`.
+
+#### Diriger l'aperçu du panel
+
+`settingGroups[].previewPath` dit quelle page l'aperçu ouvre quand l'hébergeur entre dans la
+section : `"/login"` pour les pages de connexion, `"/invoices"` pour l'espace client. Une section
+sans page garde celle qu'on regarde. Le sélecteur de page reste utilisable — la valeur le pousse,
+elle ne le verrouille pas.
+
+Les chemins admis sont ceux de `isThemePreviewPath` : la vitrine, les documents légaux et
+l'authentification (`THEME_PREVIEW_PATHS`), les pages statiques de l'espace client
+(`THEME_ACCOUNT_PREVIEW_PATHS`) et `/<slug>` des pages que votre thème déclare. `pnpm
+check-extension` refuse le reste.
+
+`ConfigField.previewPath` est **déprécié** : il ne sert plus que de repli quand la section ne
+déclare pas sa page — le premier réglage de la section qui en porte un décide alors. Déplacez-le
+sur la section.
+
+#### L'aperçu : zones réglables et données d'exemple (0.34.0)
+
+Deux attributs, posés sur un élément que votre gabarit rend déjà, relient la page au panel :
+
+```liquid
+<section class="hero" data-theme-setting="heroTitle heroImage">
+  <p data-theme-text="heroKicker">{{ t.heroKicker }}</p>
+  <h1>{{ settings.heroTitle }}</h1>
+</section>
+```
+
+Dans l'aperçu, survoler la zone propose « Modifier » : `data-theme-setting` (un ou plusieurs noms de
+réglages, séparés par des espaces) ouvre la section et le réglage, `data-theme-text` (une clé de
+`t`) ouvre le texte. Ni l'un ni l'autre n'a d'effet hors de l'aperçu, et le calque de surlignage
+est posé par le noyau sur `body`, jamais dans votre HTML. `check-extension` avertit d'un nom qui ne
+désigne aucun réglage déclaré, ou d'une clé absente de vos traductions.
+
+Ce que vous pouvez supposer de l'aperçu :
+
+- **Les réglages liés à un token ou à une `cssVar` s'appliquent sans recharger la page**, glisser de
+  couleur compris : le panel recalcule la feuille des tokens avec les fonctions mêmes du portail.
+  Le HTML, lui, n'est pas rendu à nouveau : un gabarit qui lit aussi `settings.<nom>` d'un tel
+  réglage ne se met à jour qu'au rechargement suivant — faites passer l'effet par la variable CSS.
+  Les autres réglages rechargent la page, au même chemin et à la même position de défilement.
+- **L'espace client s'ouvre sans session client**, sur des données d'exemple produites par le noyau
+  pour chacune des 26 vues, dans la langue et la devise de l'aperçu ; ses îlots y sont inertes. Même
+  contexte, mêmes clés que sur une vraie page : un gabarit n'a rien à distinguer. Avec une session
+  client dans le même navigateur, l'aperçu montre ses vraies pages.
+- **Le mode sombre et la langue sont forcés** par le panel (sélecteur Clair / Sombre / Système quand
+  le brouillon vaut `auto`, langue de l'aperçu qui suit la langue éditée).
+
+#### Traduire les libellés d'un thème
+
+`locales/fr.json`, `locales/en.json`, `locales/de.json` dans le dossier du thème (`theme.locales`
+pour un autre nom) : des clés plates, des valeurs texte. Le noyau les pose sous `t` dans les contextes
+de gabarit servis à un visiteur — enveloppe, vues de la vitrine et de l'espace client, pages du
+thème :
+
+```liquid
+<button type="submit">{{ t.search }}</button>
+<input placeholder="{{ t.searchPlaceholder }}" aria-label="{{ t.searchLabel }}">
+```
+
+La langue de la page d'abord, celle de l'instance ensuite, **clé par clé** : une chaîne pas encore
+traduite s'affiche dans la langue de l'hébergeur au lieu de disparaître. Une clé inconnue rend du
+vide, jamais son propre nom.
+
+C'est la seule façon tenable de livrer un thème multilingue. `locale` permet bien d'écrire
+`{% if locale == "en" %}…{% endif %}`, mais à cent libellés près de trois langues, un thème reste
+écrit dans une seule — et ses libellés se mélangent alors à ceux du noyau, eux traduits, sur la
+même page.
+
+Un réglage peut encore l'emporter sur le dictionnaire (`{{ settings.kbTitle | default: t.kbTitle }}`),
+mais ce n'est plus nécessaire pour laisser l'hébergeur réécrire un texte : les textes du thème le
+font pour toutes vos clés, sans un réglage de plus.
+
+`pnpm check-extension` refuse une clé lue par un gabarit et absente de toutes les traductions, et
+signale les clés qu'aucun gabarit ne lit ainsi que les langues incomplètes.
+
+Une exception : `templates/email.liquid` reçoit `t` vide. Le sujet et le corps d'un e-mail sont
+déjà rendus dans la langue du destinataire avant d'arriver au gabarit, et le point d'envoi ne
+transporte pas cette langue jusqu'ici. Un gabarit d'e-mail n'a donc pas de libellé propre à
+traduire — il enveloppe un texte déjà écrit.
+
+#### Les textes du thème (0.34.0)
+
+L'hébergeur peut réécrire, **par langue**, toute clé de `t` que votre thème livre, depuis la section
+« Textes du thème » que le noyau ajoute à tout thème qui a des traductions. Il n'y a rien à
+déclarer pour en profiter. Deux gestes rendent l'édition plus directe :
+
+- `settingGroups[].texts` range des clés dans une section, sous l'intertitre « Textes », à côté des
+  réglages qui façonnent le même bloc. Une clé ne se range que dans une section.
+- `data-theme-text="clé"` sur l'élément qui l'affiche : l'aperçu y propose « Modifier » (voir plus
+  haut).
+
+Ce que le gabarit reçoit sous `t`, du plus faible au plus fort : votre fichier dans la langue de
+l'instance, la réécriture dans cette langue, votre fichier dans la langue de la page, la réécriture
+dans cette langue. **Une réécriture vaut pour sa langue** : la traduction que vous livrez dans la
+langue demandée passe devant une réécriture faite dans une autre langue. Une valeur vide rend le
+texte du thème, jamais un trou. Les réécritures sont stockées sous la clé réservée `$texts` des
+réglages — toute clé commençant par `$` appartient au noyau, et la règle de nom d'un réglage ne peut
+pas en produire.
+
+Conséquence pour vous : **n'écrivez plus un réglage `text` qui ne fait que surcharger une de vos
+traductions.** Argile en avait 43 ; les textes du thème les ont remplacés.
+
+#### Traduire le panel : `settingsLocale` et `locales/panel/` (0.34.0)
+
+Les libellés du manifeste (réglages, aides, placeholders, sections, sous-groupes, options,
+sous-champs, descriptions de section) sont écrits dans une langue, que `settingsLocale` déclare
+(défaut `"en"`). Pour les autres langues du noyau (`fr`, `en`, `de`), un fichier plat par langue
+dont **la clé est la chaîne source exacte**, à la manière de gettext :
+
+Pour un thème dont `settingsLocale` vaut `"fr"`, `locales/panel/en.json` :
+
+```json
+{ "Couleurs": "Colours", "Couleur principale": "Primary colour", "Mode sombre": "Dark mode" }
+```
+
+Le panel affiche chaque libellé dans la langue du membre du staff, et retombe sur la chaîne source
+quand une traduction manque. `themePanelStrings(theme)` liste les chaînes attendues ;
+`check-extension` avertit d'un fichier absent, d'une chaîne non traduite ou d'une clé orpheline.
+`locales/panel/` n'est jamais une langue des gabarits : `t` ne le lit pas.
+
+#### Un mode sombre qui suit le visiteur
+
+`theme.tokensDark` déclare la palette sombre — **déclarée, jamais dérivée** : inverser
+mécaniquement une palette claire donne des gris boueux et des aplats de marque illisibles. Elle
+s'empile sur `tokens`, donc ne redéclarez que ce qui change (les couleurs, en général) ; rayons,
+polices et densité restent ceux du thème.
+
+`tokens.colorScheme` décide de ce qui est servi, et c'est un réglage comme un autre
+(`"token": "colorScheme"`, type `select`) :
+
+| Valeur | Ce que le visiteur reçoit |
+|---|---|
+| `light` | la palette claire, quel que soit son système |
+| `auto` | la palette claire, plus un bloc `@media (prefers-color-scheme: dark)` |
+| `dark` | la palette sombre seule |
+
+Sans `tokensDark`, `auto` et `dark` retombent en clair : un thème qui n'a pas pensé son mode
+sombre n'en reçoit pas un de force. Un réglage marqué `"scheme": "dark"` alimente la palette
+sombre au lieu de la claire — c'est ainsi qu'on expose deux couleurs principales, une par
+apparence. Les deux blocs redéclarent tout : les valeurs dérivées (`--brand-color-on-primary`)
+sont recalculées pour chaque palette, et la marque d'un revendeur, sur ses domaines, l'emporte sur
+les deux.
+
+Une feuille de style de thème qui veut corriger quelque chose en sombre ne peut pas se contenter
+de `@media (prefers-color-scheme: dark)` : la requête ignore le choix de l'hébergeur et
+s'appliquerait à un site réglé sur « toujours claire ». `theme-argile` pose donc
+`data-ag-scheme="{{ settings.colorScheme }}"` sur son marqueur d'enveloppe et s'en sert comme
+garde.
+
+Ce que la liaison ne permet pas, et c'est voulu : un `boolean` ou un `text` lié à une variable, une
+variable du noyau, une couleur qui ne serait pas un hexadécimal. Pour un réglage qui change la
+**forme** d'un bloc (une barre pleine largeur, un pied compact), une classe posée par le gabarit
+reste le bon outil ; pour un réglage global sans gabarit sur chaque page, `theme-argile` montre le
+marqueur `data-ag-*` recopié sur `<html>` par son script, et lu par `:has()` sans lui.
+
+#### Typographie, relief et mise en page (0.34.0)
+
+Onze tokens de plus, tous liables à un réglage, chacun émis dans une variable que le portail lit
+déjà :
+
+| Token | Défaut | Variable | Ce qui la lit |
+|---|---|---|---|
+| `typography.lineHeight` | `1.5` | `--brand-line-height` | le `<body>` du portail |
+| `typography.headingLineHeight` | `1.2` | `--brand-line-height-heading` | `h1`-`h3` |
+| `typography.letterSpacing` | `0em` | `--brand-letter-spacing` | le `<body>` du portail |
+| `typography.headingLetterSpacing` | `-0.01em` | `--brand-letter-spacing-heading` | `h1`-`h3` |
+| `typography.headingScale` | `1.25` | `--font-size-h1`, `-h2`, `-h3` | `h3` = `baseSize` × ratio, `h2` × ratio², `h1` × ratio³ |
+| `colors.link` | l'accent résolu | `--brand-color-link` | les liens sans classe |
+| `colors.focus` | l'accent résolu | `--brand-color-focus` | l'anneau de focus clavier |
+| `radii.button` | `radii.md` | `--radius-button` | les boutons du noyau |
+| `layout.containerMax` | `72rem` | `--layout-container-max` | la largeur du contenu de la vitrine |
+| `layout.accountNav` | `sidebar` | — | `top` met la navigation de l'espace client en barre au-dessus du contenu |
+| `elevation` | `soft` | `--shadow-sm`, `-md`, `-lg` | `flat`, `soft` ou `raised`, ombres teintées par la couleur du texte |
+
+`lineHeight`, `headingLineHeight` et `headingScale` sont **sans unité** : un `number` qui s'y lie
+ne déclare pas d'`unit`. `elevation` et `layout.accountNav` refusent au chargement une valeur hors
+liste, et `check-extension` avertit d'une clé inconnue dans `tokens` ou `tokensDark`
+(`typography.lineheight` ne produit sinon ni erreur ni effet).
+
+Trois tokens existants changent de comportement :
+
+- `typography.headingWeight` est enfin lu (`--brand-weight-heading` sur `h1`-`h3`, défaut `700`).
+- `typography.headingFamily` suit `fontFamily` tant qu'aucune couche ne la déclare : un thème qui
+  ne déclare que `fontFamily` a ses titres dans sa police, et non en Inter.
+- `baseSize` fait maintenant varier les titres, par l'échelle. `--font-size-sm`, `-lg` et `-xl`
+  restent fixes.
+
+**Les défauts changent le rendu.** Sur un thème qui ne déclare rien, le texte courant passe en
+hauteur de ligne `1.5` et les titres en `1.2`, `-0.01em`, avec les tailles de l'échelle au lieu de
+celles du navigateur (`h1` ≈ 1,95 fois la taille de base au lieu de 2, `h3` 1,25 au lieu de 1,17).
+Les règles des titres passent par `:where([data-theme])`, de spécificité minimale : la classe d'un
+gabarit qui fixe sa propre taille ou son interlignage l'emporte toujours.
+
+#### L'écran de réglages
+
+Il s'ouvre depuis **Paramètres › Système › Thèmes**, par le lien de la carte du
+thème — proposé pour tout thème, même sans réglage déclaré ni appliqué : l'hôte y ajoute le CSS
+additionnel, les textes du thème et l'historique des publications (voir « Ce que l'hôte fournit à
+tout thème »). C'est un éditeur plein écran : réglages à gauche, aperçu sur le reste. Les
+modifications y sont enregistrées en brouillon, que seul l'aperçu lit, jusqu'à ce que l'hébergeur
+les publie : un gabarit peut donc recevoir, dans l'aperçu, des valeurs que la vitrine n'affiche pas
+encore. Un gabarit n'a rien à faire pour en profiter.
+
+### Une capture pour le sélecteur
+
+`theme.screenshot` désigne une image relative au **dossier du thème** (pas au dossier `assets`,
+contrairement à `logo`) : PNG, JPEG ou WebP, 1200 × 750 recommandé, 400 Ko au plus. Le panel
+l'affiche sur la carte du thème, pour qu'un hébergeur voie ce qu'il applique. Sans capture, il
+dessine une vignette à partir de vos tokens.
+
+### Le catalogue dans l'enveloppe
+
+`templates/partials/header.liquid` reçoit `catalogFamilies` sur la vitrine : **l'arbre des
+catégories publiées**, chacune avec `products` (ses offres et leurs prix), `children` (ses
+sous-familles), `productCount` (sa branche entière) et `fromPriceFormatted` (son prix d'appel, déjà
+mis en forme). De quoi écrire un menu déroulant à colonnes sans rien coder en dur :
+
+```liquid
+{% for family in catalogFamilies %}
+<details>
+  <summary>{{ family.name }}</summary>
+  {% for column in family.children %}
+    <a href="/catalog#cat-{{ column.id }}">{{ column.name }} — dès {{ column.fromPriceFormatted }}</a>
+    {% for product in column.products limit: 5 %}
+      <a href="/catalog#cat-{{ column.id }}">{{ product.name }} {{ product.priceFormatted }}</a>
+    {% endfor %}
+  {% endfor %}
+</details>
+{% endfor %}
+```
+
+Absent dans l'espace client, et vide si aucune offre n'est publiée : un gabarit teste
+`catalogFamilies.size` avant de dérouler quoi que ce soit. Le noyau ne tronque pas la liste des
+offres — il ne saurait pas où —, c'est au gabarit de limiter.
+
+### Découper ses gabarits
+
+Un thème peut factoriser ce qui se répète — un jeu d'icônes, une carte, un pied de section — dans
+un fichier appelé par `{% render %}` ou `{% include %}`. Le chemin part de la **racine du thème**,
+pas du gabarit qui l'écrit :
+
+```liquid
+{% render "templates/partials/icon", name: "server" %}   {% comment %} oui {% endcomment %}
+{% render "partials/icon", name: "server" %}             {% comment %} non : ENOENT {% endcomment %}
+```
+
+Écrit en relatif, LiquidJS lève une erreur, le noyau retombe sur son écran React et la page reste
+parfaitement présentable — en apparence seulement, plus une ligne du thème ne s'affiche. Rien à
+l'écran ne le signale ; le journal de l'API, si. `pnpm check-extension` refuse désormais ce cas.
+
+`{% render %}` isole la portée : le fichier appelé ne voit que les paramètres qu'on lui passe, pas
+le contexte de la page. C'est ce qui en fait le bon outil pour un composant sans état comme une
+icône.
+
+### Ce qu'un gabarit ne doit pas promettre
+
+La page d'accueil (`pages/home.liquid`) et les pages apportées par le thème (`pages` du manifeste,
+`templates/custom/<slug>.liquid`) reçoivent `commitments` : la disponibilité, la rétention des
+sauvegardes et le délai de réponse du support que l'hébergeur a saisis dans ses réglages. Chaque
+champ est **absent** tant qu'il n'a rien saisi.
+
+```liquid
+{% if commitments.uptime %}Disponibilité : {{ commitments.uptime }}{% endif %}
+```
+
+Le thème livré `encre` a longtemps annoncé « 99,9 % », « quatorze jours » et « quatre heures »
+écrits en dur dans son gabarit. Chaque hébergeur qui l'installait publiait donc, sous sa propre
+signature, des engagements qu'il n'avait jamais pris et qu'il ne pouvait corriger qu'en éditant un
+fichier du thème. Un thème décide *où* un chiffre apparaît ; seul l'hébergeur décide *lequel*, et
+son silence est une réponse valable — la section ne s'affiche pas.
+
+La règle vaut au-delà de ces trois champs : n'écrivez dans un gabarit aucune affirmation qui
+engage l'exploitant du site. Prix, délais, garanties, certifications, avis de clients — rien de
+tout cela n'est connu de l'auteur d'un thème.
 
 ### Le CSS et le JS
 
-`theme.stylesheet` est chargé en dernier, après les tokens et les styles de l'application : il peut
-tout redéfinir. `theme.script` est un fichier `.js` chargé en `defer` sur toutes les pages du
+`theme.stylesheet` est chargé après les tokens et les styles de l'application : il peut tout
+redéfinir. Seul le CSS additionnel de l'hébergeur vient après lui (voir « Ce que l'hôte fournit à
+tout thème »). `theme.script` est un fichier `.js` chargé en `defer` sur toutes les pages du
 portail, servi par une route dédiée. Aucune étape de build : ce que vous déposez est ce qui est
 servi.
 
@@ -785,19 +1377,115 @@ Trois limites à connaître avant d'écrire un script :
    trouverait vide. Observez (`MutationObserver`) ou tenez-vous-en à ce que votre gabarit produit.
 2. **Ne réécrivez pas le DOM d'un îlot.** React le réconcilie ; vos modifications disparaîtront au
    premier rendu, de façon intermittente et impossible à diagnostiquer.
-3. **Vous êtes seul responsable de la conformité de ce que vous injectez.** La bannière de
-   consentement du portail (accepter/refuser) ne couvre que les cookies posés par le noyau — elle
-   ne sait rien d'un traceur ajouté par `theme.script`. Un thème qui pose un cookie de mesure
-   d'audience ou publicitaire doit gérer son propre consentement (ne se déclencher qu'après un
-   choix explicite, lu par exemple dans `localStorage["cookie-consent-dismissed"]`) : c'est
-   l'hébergeur qui répond de la conformité de ce qu'il installe.
+3. **Un script qui dépose un traceur doit attendre le consentement.** C'est la seule des trois
+   limites qui n'est pas technique.
+
+#### Le consentement, pour un script de thème
+
+Le portail ne dépose de lui-même que des traceurs strictement nécessaires (session, langue, panier,
+et le choix de consentement lui-même). Un script de thème, lui, peut en charger d'autres — une
+mesure d'audience, une carte, un chat. L'état du consentement se lit à deux endroits, et les deux
+sont nécessaires :
+
+```js
+// À l'exécution du script : l'attribut existe dès l'hydratation du bandeau.
+const consent = document.documentElement.dataset.cookieConsent; // "unset" | "granted" | "denied"
+if (consent === "granted") loadTracker();
+
+// Et ensuite, quand le visiteur répond ou revient sur sa réponse.
+window.addEventListener("nw:cookie-consent", (event) => {
+  if (event.detail === "granted") loadTracker();
+});
+```
+
+Deux règles à ne pas contourner. **`"unset"` vaut refus** : tant que personne n'a répondu, rien ne
+doit être chargé — c'est le seul état où le visiteur n'a pas eu l'occasion de dire non. Et un
+traceur chargé ne se décharge pas : si vous en avez posé un, un passage à `"denied"` doit au moins
+cesser d'envoyer, sans quoi le bouton « Refuser » ne refuse rien.
+
+Ce que vous chargez doit aussi figurer dans la politique de cookies de l'instance. Le modèle
+proposé à l'hébergeur (Paramètres › Légal) énumère les traceurs du produit et se termine par une
+ligne lui rappelant d'y ajouter les vôtres — dites-le dans le README de votre thème, il n'a aucun
+autre moyen de le savoir.
+
+#### Polices : les livrer, pas les emprunter
+
+`theme.fonts` déclare les polices que le thème veut voir chargées : `family`, `src`, `weight`,
+`style`, `display` (défaut `swap`). **`src` part du dossier de ressources** du thème (`assets`, par
+défaut `assets/`), pas du dossier du thème : il est servi sous la même adresse que vos autres
+ressources, et le noyau en fabrique le `@font-face`.
+
+```json
+"fonts": [{ "family": "Figtree", "src": "fonts/figtree-latin-wght-normal.woff2", "weight": "300 900" }]
+```
+
+Livrez vos fichiers WOFF2 plutôt qu'un `href` vers Google Fonts : une feuille externe est chargée
+avant toute réponse au bandeau de consentement, et transmet l'adresse IP de chaque visiteur à un
+tiers. Argile et Encre embarquent les leurs depuis 0.34.0.
+
+Chaque valeur finit dans un `<style>` posé tel quel dans la page. D'où une liste blanche
+(`isSafeThemeFont`) : famille en lettres ASCII, chiffres, espaces, `_` ou `-` (64 caractères,
+guillemets de bord ignorés — `"Libre Franklin 2.0"` est écartée pour son point), graisse `normal`,
+`bold` ou de 1 à 1000 (deux valeurs pour une police variable), style `normal` ou `italic`,
+`display` parmi les cinq du CSS. Une police refusée est omise en entier, le texte retombe sur la
+suite de la pile, et `check-extension` le signale.
+
+### Le rendu échappe tout
+
+Le moteur échappe **toute** sortie d'un gabarit, sans exception que vous puissiez invoquer :
+
+- `{{ x }}`, bien sûr ;
+- `{{ x | raw }}` : `raw` est réenregistré sans effet, et `check-extension` le signale ;
+- `{% echo x %}`, `{% liquid echo x %}` et `{% cycle %}` passent par la même fonction que `{{ }}`.
+
+Trois sorties seulement arrivent en HTML, parce que le noyau les a construites : `{{ bodyHtml }}`
+dans `templates/email.liquid` (un filtre qui la transforme rend une chaîne ordinaire, échappée),
+`{{ article.bodyHtml }}` dans `templates/pages/kb-article.liquid` (depuis 0.35.0, même règle pour
+les filtres), et le résultat du filtre `markdown`. Pour un texte mis en forme par l'hébergeur, c'est
+`format: "markdown"` ; il n'y a pas d'autre chemin. Le marqueur qui les distingue est posé par le
+noyau côté rendu, sur un contexte qu'il vient d'assembler : il n'existe pas en JSON, et un contexte
+que votre page ou un module envoie ne peut donc pas en fabriquer un.
+
+Même principe pour ce qui va dans une feuille de style. `isSafeTokenValue` refuse, sans égard à la
+casse, ce qui sortirait d'une déclaration ou de la balise `<style>` (`<`, `>`, `;`, `{`, `}`, `\`,
+caractère de contrôle), `@`, et les fonctions qui font charger une adresse ou exécutaient du script
+(`url(`, `image(`, `image-set(`, `cross-fade(`, `element(`, `src(`, `expression(`). Dans `tokens`
+ou `tokensDark`, une telle valeur fait **refuser le thème au chargement**, avec le nom du token en
+cause ; dans une option ou un réglage lié au CSS, elle est refusée à la lecture du manifeste puis
+ignorée au rendu. Une image de fond passe par un gabarit (`<img>`, `style` d'un élément), pas par
+un token.
+
+### Ce que l'hôte fournit à tout thème
+
+Sans une ligne de votre part, et sur l'écran de réglages de n'importe quel thème :
+
+- **CSS additionnel** (permission `themes.css`) : une feuille saisie par l'hébergeur, émise après
+  la vôtre sur la vitrine et l'espace client, jamais sur les pages d'authentification. Elle est
+  analysée puis resérialisée : at-rules en liste blanche, aucune fonction qui charge une ressource,
+  `url()` limitée aux images téléversées de l'instance. À spécificité égale, elle l'emporte sur
+  votre feuille — c'est son rôle.
+- **Textes du thème** : voir plus haut.
+- **Polices téléversées** : proposées par tout réglage `font` (voir plus haut).
+- **Historique des publications** : les 20 dernières, chacune restaurable dans le brouillon, jamais
+  directement en ligne. Ce qui ne passe plus (un réglage retiré par une mise à jour du thème, une
+  image supprimée) est écarté et listé.
+- **Identité du site**, dans Paramètres › Identité : raison sociale, logo, favicon, titre du site et
+  son motif (`{page} · {site}`), description par langue, image de partage. Le portail les émet dans
+  ses métadonnées. Le favicon de l'Identité passe devant `theme.favicon`, qui sert de repli — et
+  qui est enfin émis depuis 0.34.0 : il était déclaré et vérifié, jamais servi.
 
 Le module d'exemple `theme-kiosque` fournit tous les niveaux — tokens, polices livrées, CSS libre,
 enveloppe, gabarits de vue avec îlots, et son script — sans rien connaître du noyau au-delà de ce
-contrat. Il ne couvre volontairement que 6 vues sur 42 : les 36 autres retombent sur les écrans de
-l'hôte, et c'est ce qui rend un thème publiable avant d'être complet. La sixième est `login`, qui
-n'est là que pour montrer un point du contrat — un thème tiers rhabille l'écran de connexion sans
-pouvoir en écrire le formulaire.
+contrat. Il ne couvre volontairement que 9 vues sur 46 : les 37 autres retombent sur les écrans de
+l'hôte, et c'est ce qui rend un thème publiable avant d'être complet. Parmi elles, `login` n'est là
+que pour montrer un point du contrat — un thème tiers rhabille l'écran de connexion sans pouvoir en
+écrire le formulaire. Il déclare encore `^0.33.0` et n'utilise aucun ajout de 0.34.0 au-delà des
+îlots devenus obligatoires sur `service`.
+
+`theme-argile`, versionné dans le dépôt du produit, est la référence complète du contrat 0.35.0 :
+les 46 vues, des sections, sous-groupes et blocs, des conditions chaînées, des liens, des polices
+livrées et le type `font`, du texte en markdown, des textes du thème rangés par section, les
+traductions du panel, et des zones `data-theme-setting` sur ses régions réglables.
 
 ## Écrire, vérifier, déposer
 

@@ -29,8 +29,28 @@ export {
   requireOneOf,
   requireString,
   secretFieldNames,
+  CONFIG_FIELD_UNITS,
+  THEME_RESERVED_SETTING_KEYS,
 } from "./config-fields";
-export type { ConfigField, ConfigFieldOption, ConfigFieldType } from "./config-fields";
+// Lien et texte riche des réglages de thème : purs et sans Node, comme les conditions — le panel
+// valide un lien et rend l'aperçu d'un texte avec les mêmes fonctions que l'API et le moteur.
+export { isSafeLinkValue } from "./links";
+export { THEME_MARKDOWN_MAX_LENGTH, parseThemeMarkdown } from "./markdown";
+export type { ThemeMarkdownBlock, ThemeMarkdownInline } from "./markdown";
+// Évaluation de `visibleWhen` : pure et sans Node, donc sûre dans ce fichier que lisent les bundles
+// navigateur — le panel l'appelle au lieu de réécrire la règle.
+export { conditionHolds, configFieldConditions, isConfigFieldVisible } from "./config-conditions";
+export type { ConfigFieldValues } from "./config-conditions";
+export type {
+  ConfigField,
+  ConfigFieldCondition,
+  ConfigFieldOption,
+  ConfigFieldType,
+  ConfigFieldUnit,
+  ThemeSettingItem,
+  ThemeSettingScalar,
+  ThemeSettingValue,
+} from "./config-fields";
 
 export { HOST_CONTRACT_COMPATIBLE_SINCE, HOST_CONTRACT_VERSION } from "./version";
 
@@ -123,19 +143,44 @@ export {
   declaredIslands,
   invalidThemePages,
   isProvidedContextView,
+  isSafeSettingUrl,
+  isHexColor,
+  THEME_TEXT_KEY_PATTERN,
+  THEME_TEXT_MAX_LENGTH,
+  themeTranslationReads,
+  themeSettingStyle,
+  themeSettingEditable,
+  MAX_LIST_ITEMS,
   isSafeTokenValue,
+  isSafeThemeFont,
+  isSafeUploadedFontFamily,
+  isAllowedFontValue,
+  uploadedFontFaces,
+  themeFontFaces,
+  THEME_PREVIEW_PATHS,
+  THEME_ACCOUNT_PREVIEW_PATHS,
+  isThemePreviewPath,
+  themePanelStrings,
+  themeSettingWarnings,
   mergeThemeTokens,
   missingRequiredIslands,
   themeIslandSpec,
   themePageTemplatePath,
+  themeSettingValues,
+  invalidThemeSettings,
   themeViewSpec,
   unknownIslands,
 } from "./kinds/theme";
 export type {
   PartialThemeTokens,
   ResolvedTheme,
+  ThemeSettingResolveOptions,
+  ThemeSettingGroup,
+  ThemePreviewPath,
+  ThemeTranslations,
   ThemeAcceptInviteView,
   ThemeAccountBillingView,
+  ThemeAccountNav,
   ThemeAccountPaymentMethodsView,
   ThemeAccountPrivacyView,
   ThemeAccountProfileView,
@@ -146,6 +191,7 @@ export type {
   ThemeBundleView,
   ThemeCartView,
   ThemeCatalogView,
+  ThemeCatalogFamily,
   ThemeCategorySection,
   ThemeColors,
   ThemeColorScheme,
@@ -159,8 +205,10 @@ export type {
   ThemeDomainsMineView,
   ThemeDomainsView,
   ThemeDomainView,
+  ThemeElevation,
   ThemeEmailContext,
   ThemeFont,
+  ThemeUploadedFont,
   ThemeForgotPasswordView,
   ThemeHistoryView,
   ThemeHomeView,
@@ -172,6 +220,8 @@ export type {
   ThemeKbArticleSummary,
   ThemeKbArticleView,
   ThemeKbView,
+  ThemeLayout,
+  ThemeLegalDocumentView,
   ThemeLegalPrivacyView,
   ThemeLegalTermsView,
   ThemeLoginView,
@@ -188,6 +238,7 @@ export type {
   ThemeResellerClientsView,
   ThemeResellerClientView,
   ThemeResetPasswordView,
+  ThemeServiceCommitments,
   ThemeServiceConsoleView,
   ThemeServicesView,
   ThemeServiceSummary,

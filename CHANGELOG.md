@@ -20,6 +20,312 @@ n'éteint aucun module existant. C'est délibéré tant que la surface n'est pas
 > module qui déclare `^0.1.0` cesse donc de se charger à partir de cette version — c'est l'effet
 > recherché, il a été écrit contre un contrat qui n'existe plus.
 
+## 0.35.0 — 2026-10-03
+
+Additif, aucune rupture : un thème écrit contre `0.34.0` se charge et se rend comme avant. Il
+déclare `^0.35.0` dès qu'il utilise un ajout, pour qu'un noyau plus ancien le refuse au lieu de lui
+rendre un champ vide.
+
+- **Base de connaissances : les articles ne sont plus du texte brut.** Le corps d'un article est
+  désormais un Markdown limité (titres, listes, citations, blocs de code, gras, italique, liens,
+  images téléversées au panel), jamais du HTML : une balise saisie reste du texte.
+  - **`ThemeKbArticle.bodyHtml`** : le corps rendu en HTML par le noyau, que `kb-article.liquid`
+    place avec `{{ article.bodyHtml }}`. C'est la troisième valeur de contexte que le moteur n'échappe
+    pas (avec `bodyHtml` d'un e-mail et le filtre `markdown`), parce que le noyau l'a construite : le
+    marqueur de confiance est posé côté rendu, sur le contexte que le noyau vient d'assembler, et ne
+    survit pas à une sérialisation JSON — un contexte posté par une page ne peut pas en fabriquer un.
+    Éléments et attributs possibles : voir la documentation du champ. Le noyau ne pose aucun style
+    dessus.
+  - **`ThemeKbArticle.metaDescription`** : la description saisie par le rédacteur, sinon un extrait
+    du corps (160 caractères au plus). Texte brut, échappé.
+  - **`ThemeKbArticle.body` change de nature, pas de type** : c'est le texte source (Markdown),
+    toujours échappé. Un thème qui l'affichait avec `white-space: pre-wrap` (l'ancien contrat disait
+    « texte brut ») rend désormais le balisage tel quel (`## Titre`, `**gras**`) pour les articles
+    qui en utilisent ; il passe à `bodyHtml` pour profiter de la mise en forme. Les articles écrits
+    avant ce format ne changent pas d'aspect : leurs marqueurs `- ` et `1. ` sont des listes
+    Markdown valides.
+  - Les gabarits `kb-article.liquid` d'Encre et d'Argile rendent `bodyHtml`. Les thèmes tiers
+    gardent le leur tel quel jusqu'à ce que leur auteur le change ; une vue sans gabarit retombe sur
+    la page du noyau, qui rend le Markdown (c'est le cas de `theme-kiosque`).
+
+## 0.34.0 — 2026-09-22
+
+Personnalisation de thème poussée (plan : `docs/plans/plan-themes-personnalisation.md`). Levée
+nommée du moratoire du 2026-08-28 pour la surface « thèmes » du contrat, sur demande de
+l'utilisateur. Entrée complétée tranche par tranche.
+
+- **Consignés ici faute de l'avoir été à leur sortie** (lot des réglages de thème, 2026-09-17) :
+  `ConfigFieldType` `image` (téléversement au panel, réservé aux thèmes), `ConfigField.maxLength`
+  (compteur au panel, refus au noyau), `ThemeDefinition.screenshot`, `isSafeSettingUrl`.
+
+### Tranche 0 — socle et correctifs
+
+- **Durcissement : îlots obligatoires.** `THEME_VIEWS` exige désormais tous les îlots qui sont le
+  seul chemin vers une fonction. Un thème peut les placer où il veut, jamais les retirer.
+  - `service` : `service-actions`, `service-credentials`, `service-reinstall`, `service-snapshots`,
+    `service-backups`, `service-reverse-dns`, `service-plan-change`, `service-addons`,
+    `service-monitoring`, `service-early-renewal`, `service-cancellation`.
+  - `account-security` : `account-change-password`, `account-two-factor`, `account-passkeys`,
+    `account-sso`, `account-anti-phishing`.
+  - `ticket` : `ticket-reply`, `ticket-satisfaction`.
+  - `dns-zone` : `dns-records-editor`, `dns-use-host-ns`, `dns-delete-zone`.
+
+  `check-extension` échoue sur un thème qui ne les pose pas ; le moteur, lui, ne vérifie pas les
+  îlots au chargement, si bien que le thème continue de se charger. C'est la seule exception au
+  caractère additif de cette version.
+- **Échappement sans exception.** Le moteur échappe toute sortie : `| raw` est réenregistré sans
+  son drapeau, les balises `echo` et `cycle` (y compris dans `{% liquid %}`) passent par la même
+  fonction que `{{ }}`. `check-extension` signale un `| raw`, désormais sans effet.
+- **`isSafeTokenValue`** ignore la casse et refuse en plus `@` et les fonctions CSS qui chargent une
+  ressource ou exécutent du code : `url(`, `image(`, `image-set(` (donc `-webkit-image-set(`),
+  `cross-fade(`, `element(`, `src(`, `expression(`. Un token, une valeur d'option ou un réglage lié
+  au CSS qui en contient est refusé à la lecture du manifeste et ignoré au rendu.
+- **`mergeThemeTokens`** : `typography.headingFamily` suit `fontFamily` tant qu'aucune couche ne la
+  déclare ; un thème qui ne déclare que `fontFamily` n'a plus ses titres en Inter.
+- **`DEFAULT_THEME_TOKENS.typography.headingWeight`** passe de `"600"` à `"700"` : le noyau lit
+  désormais `--brand-weight-heading` sur `h1`-`h3`, et 700 est la graisse que le navigateur leur
+  donnait déjà. Une instance sur les défauts ne change pas d'apparence ; un thème qui déclare
+  `headingWeight` voit enfin ce choix appliqué.
+- **Paramètres › Identité ne porte plus ni couleur ni police** et ne recouvre plus les réglages de
+  thème liés à un token. Empilement : défauts du noyau → tokens du thème → réglages publiés du thème
+  → marque d'un revendeur (sur ses domaines et pour ses clients). L'assistant d'installation écrit
+  sa couleur principale dans le réglage publié du thème actif lié à `colors.primary` (palette
+  claire) : un thème qui veut la recevoir déclare un tel réglage.
+- **Documentation** : `ThemeFont.src` est relatif au dossier de ressources du thème ; `ConfigField.group`
+  décrit le regroupement réel (champs consécutifs de même groupe) ; la documentation de
+  `ResolvedTheme`, orpheline, est remise sur son symbole.
+- **Correctifs de revue de la tranche 0.**
+  - `isSafeThemeFont(font)` (nouveau) : la liste blanche que le noyau applique avant d'émettre le
+    `@font-face` d'une police livrée — famille en lettres ASCII, chiffres, espaces, `_` ou `-`
+    (64 caractères, guillemets de bord ignorés), graisse `normal`, `bold` ou de 1 à 1000 (deux
+    valeurs pour une police variable), style `normal`/`italic`, `display` énuméré. Une police
+    refusée est omise en entier et `check-extension` en avertit.
+  - `isSafeSettingUrl` (durcissement) : un blanc, un caractère de contrôle ou une barre oblique
+    inverse est refusé n'importe où dans un chemin (`/<tabulation>/hote` devenait `//hote` pour le
+    navigateur), et une adresse absolue ne peut contenir ni blanc ni caractère de contrôle.
+  - `{{ bodyHtml }}` dans `templates/email.liquid` rend le corps en HTML : c'est la seule valeur de
+    contexte que le moteur n'échappe pas, parce que le noyau l'a construite. Un filtre qui la
+    transforme rend une chaîne ordinaire, échappée.
+  - Le pied de thème généré par `create-extension theme` boucle `legalLinks` et pose l'îlot
+    `cookie-preferences`.
+  - Hôte : la palette sombre reprend les réglages sans `scheme` qui ne sont pas des couleurs
+    (polices, graisses, rayons, densité, taille de base), et les `cssVar` sans `scheme` restent
+    servies en mode `dark`. Dans l'espace client, `LegalFooter` ne s'efface que devant un pied de
+    thème qui pose `cookie-preferences` et renvoie à chaque document légal publié.
+
+### Tranche A — structure des réglages
+
+- **Changement de type : `ConfigFieldCondition` devient une union** `{ field, equals }` |
+  `{ field, notEquals }` | `{ field, in: string[] }`, un seul opérateur par condition.
+  `ConfigField.visibleWhen` et `ConfigFieldOption.visibleWhen` acceptent aussi un tableau de
+  conditions, qui doivent toutes tenir. Un code TypeScript qui lisait `visibleWhen.equals` sans
+  rétrécir le type ne compile plus ; tout manifeste existant reste valide.
+- **Visibilité transitive, évaluée par le SDK** : `conditionHolds`, `isConfigFieldVisible` (un
+  champ dont le champ de référence est masqué l'est aussi ; une boucle masque ses membres sans
+  tourner), `configFieldConditions`, type `ConfigFieldValues`. Exportés par la racine, sans
+  dépendance Node.
+- **Lecteur de manifeste** : une condition mal formée (aucun ou plusieurs opérateurs, `in` non
+  tableau ou vide, `field` absent) est écartée sans refuser le thème, puis signalée par
+  `invalidThemeSettings` — avant, elle disparaissait sans un mot.
+- `ThemeDefinition.settingGroups` (`ThemeSettingGroup` : `name`, `description`,
+  `category: "appearance" | "content"`, `previewPath`) et `ThemeDefinition.settingsLocale` (langue
+  des textes du manifeste, défaut `"en"`).
+- `ConfigField.subgroup` (intertitre repliable dans la section) et `ConfigField.block` (rattache un
+  réglage à un élément d'un `order` de la même section). `ConfigField.previewPath` est **déprécié** :
+  il ne sert plus que de repli quand la section ne déclare pas le sien.
+- `invalidThemeSettings(fields, theme?)` : second paramètre facultatif ; nouvelles erreurs (renvois,
+  boucles, `subgroup`/`block` mal placés, sections en double, `category` inconnue, `previewPath`
+  refusé, `settingsLocale` inconnue). `themeSettingWarnings(theme)` : section déclarée qu'aucun
+  réglage ne nomme.
+- `THEME_PREVIEW_PATHS` gagne `/legal/notice`, `/legal/refund`, `/legal/cookies`. Nouveaux
+  `THEME_ACCOUNT_PREVIEW_PATHS` (pages statiques de l'espace client) et
+  `isThemePreviewPath(path, themePageSlugs)`. `RESERVED_PAGE_SLUGS` gagne `theme-preview`.
+- `THEME_RESERVED_SETTING_KEYS` (`$customCss`, `$texts`) : toute clé commençant par `$` appartient au
+  noyau ; la règle de nom d'un réglage ne peut pas en produire, et l'hôte écarte un tel champ.
+- **Traductions du panel** : `<locales>/panel/<langue>.json`, fichier plat dont la clé est la chaîne
+  source exacte du manifeste. `themePanelStrings(theme)` liste les chaînes attendues ;
+  `check-extension` avertit d'un fichier absent, d'une chaîne non traduite ou d'une clé orpheline
+  pour chaque langue autre que `settingsLocale`. `locales/panel/` n'est jamais une langue des
+  gabarits.
+- Hôte : l'API des réglages traduit les textes du manifeste dans la langue du staff (`?locale=`),
+  renvoie les sections ordonnées, toutes les erreurs de validation avec un code stable, et ne stocke
+  plus une valeur égale au défaut du thème — une valeur jamais choisie suit donc une mise à jour du
+  thème.
+
+### Tranche B — aperçu vivant
+
+- `themeFontFaces(theme)` est désormais exporté par le SDK (déplacé depuis `@opbs/ui`, qui le
+  réexporte) : les `@font-face` des polices qu'un thème livre, filtrés par `isSafeThemeFont`.
+- **Zones réglables** : convention `data-theme-setting="nomA nomB"` sur un élément existant d'un
+  gabarit ; l'aperçu du panel y propose « Modifier » et ouvre le réglage, ou fait défiler jusqu'à la
+  zone d'une section ouverte. `check-extension` avertit d'un nom qui ne désigne aucun réglage déclaré.
+- `THEME_PREVIEW_PATHS` ne sert plus qu'au sélecteur du panel : le portail ouvre tout chemin de même
+  origine. Les pages de `THEME_ACCOUNT_PREVIEW_PATHS` s'ouvrent désormais en aperçu — avec des données
+  d'exemple sans session client, sur les vraies pages avec une session.
+- Hôte : pont `postMessage` entre le panel et le portail cadré (origine et source vérifiées des deux
+  côtés, schéma de messages fermé), schéma clair/sombre et langue forcés en aperçu, données d'exemple
+  pour les 26 vues de l'espace client (`GET /themes/render/sample/:name`, îlots inertes), et payload
+  `preview` des réglages pour un style recalculé sans rechargement.
+
+### Tranche C — liens, texte riche, textes du thème
+
+- `ConfigFieldType` gagne `link` (réservé aux thèmes, admis en sous-champ de liste) : une
+  destination de navigation — chemin de l'instance, `https:`, `http:`, `mailto:` ou `tel:` —, là où
+  `url` désigne une ressource. **Un seul validateur**, `isSafeLinkValue` (sans blanc, caractère de
+  contrôle ni barre oblique inverse, jamais `//hote`), qu'appliquent aussi le panel, l'API et les
+  blocs des pages de contenu.
+- `ConfigField.format: "markdown"` sur un `textarea` (et un sous-champ `textarea`) :
+  `parseThemeMarkdown` (pur, linéaire, borné à `THEME_MARKDOWN_MAX_LENGTH`) reconnaît paragraphes,
+  sauts de ligne, gras, italique, liens filtrés et listes, rien d'autre. Le filtre Liquid `markdown`
+  du moteur en produit un HTML dont tout texte est échappé et chaque attribut encodé ;
+  `check-extension` avertit d'un `| markdown` placé dans une balise ouverte. Types
+  `ThemeMarkdownBlock`, `ThemeMarkdownInline`.
+- **Textes du thème** : l'hébergeur peut surcharger, par langue, toute clé de `t` que le thème
+  livre ; clé réservée `$texts` des réglages, conservée d'un enregistrement à l'autre.
+  `ThemeSettingGroup.texts` nomme les clés qu'une section affiche ; `THEME_TEXT_KEY_PATTERN`,
+  `THEME_TEXT_MAX_LENGTH`, `themeTranslationReads(source)` (clés lues par un gabarit).
+- **Zones de texte** : convention `data-theme-text="clé"`, vérifiée par `check-extension` ; l'aperçu
+  y propose « Modifier » et révèle le texte au panel (message `select-texts` du pont).
+- **Ordre des textes sous `t`** : fichier du thème dans la langue de l'instance, réécriture dans
+  cette langue, fichier du thème dans la langue de la page, réécriture dans cette langue — la
+  dernière couche l'emporte. Une réécriture vaut pour sa langue : une traduction que le thème livre
+  dans la langue demandée passe devant une réécriture faite dans une autre langue.
+
+### Tranche D — tokens
+
+- `typography.lineHeight`, `headingLineHeight`, `letterSpacing`, `headingLetterSpacing` et
+  `headingScale` (défauts `1.5`, `1.2`, `0em`, `-0.01em`, `1.25`). Les titres `h1`-`h3` du portail
+  prennent leur taille de `baseSize × headingScale^n` (`--font-size-h1/h2/h3`) ; `--font-size-sm/lg/xl`
+  restent fixes. Un réglage `number` lié à `lineHeight`, `headingLineHeight` ou `headingScale` se
+  déclare sans `unit` (une unité y est refusée).
+- `colors.link` et `colors.focus` (optionnels, repli sur l'accent résolu), `radii.button`
+  (optionnel, repli sur `md`).
+- Groupe `layout` (`containerMax`, défaut `72rem` ; `accountNav` `"sidebar"` ou `"top"`) et token
+  `elevation` (`"flat"`, `"soft"`, `"raised"`, défaut `soft`) ; types `ThemeLayout`,
+  `ThemeAccountNav`, `ThemeElevation`. Les ombres `--shadow-sm/md/lg` sont teintées par la couleur du
+  texte ; `soft` garde la géométrie et l'opacité d'avant.
+- `--shadow-` et `--layout-` sont réservés au noyau (plus de `cssVar` de thème sous ces préfixes).
+  Le manifeste refuse une valeur hors liste pour `elevation` et `layout.accountNav`.
+- `check-extension` avertit d'une clé inconnue dans `theme.tokens` et `theme.tokensDark`.
+- Hôte : liens nus, anneau de focus et rayon des boutons du design system lisent
+  `--brand-color-link`, `--brand-color-focus`, `--radius-button` ; titres du portail en
+  `--brand-font-heading` ; l'espace client passe en barre supérieure avec `layout.accountNav: "top"`.
+  Aux défauts, aucune variable existante ne change de valeur (un spec le fige).
+- **Changé : le portail sur les défauts ne s'affiche plus exactement comme avant.** Le texte courant
+  prend une hauteur de ligne de `1.5` (`--brand-line-height`, posée sur `<body>`) ; les titres
+  `h1`-`h3`, une hauteur de ligne de `1.2`, un interlettrage de `-0.01em` et des tailles dérivées de
+  `baseSize × 1.25^n` (`h1` ≈ 1,95 fois la taille de base, `h2` ≈ 1,56, `h3` 1,25) au lieu des tailles
+  du navigateur (2, 1,5 et 1,17 em). Écart assumé à la règle « les défauts reproduisent le rendu
+  actuel », aucune instance n'étant en service : des défauts calqués sur le navigateur (hauteur de
+  ligne `normal`, échelle irrégulière) n'auraient laissé à ces tokens aucune valeur de départ
+  exprimable. Les règles des titres passent par `:where([data-theme])`, de spécificité minimale :
+  une classe de thème qui fixe sa taille ou son interlignage l'emporte toujours. Seul le portail
+  pose `data-theme` : la page de statut et le panel ne changent pas.
+
+### Tranche E — CSS additionnel, identité du site
+
+- Hôte : **CSS additionnel** offert à tout thème, saisi au panel (permission dédiée `themes.css`),
+  stocké sous la clé réservée `$customCss` et émis après la feuille du thème sur la vitrine et
+  l'espace client — jamais sur les pages de connexion. Analysé par postcss puis resérialisé : at-rules
+  en liste blanche, aucune fonction qui charge une ressource ou exécute du code, `url()` limitée aux
+  médias téléversés de l'instance qui existent. Un thème n'a rien à faire pour le recevoir ; sa feuille
+  est chargée avant, le CSS additionnel l'emporte donc à spécificité égale.
+- Hôte : `ThemeDefinition.favicon` est **enfin émis** (il était déclaré et vérifié, jamais servi) :
+  l'icône du site vient du favicon de Paramètres › Identité, sinon de celui du thème actif. L'Identité
+  gagne aussi le titre du site et son motif (`{page} · {site}`), une description par langue et une
+  image de partage, émis par les métadonnées du portail.
+- `ConfigFieldType` gagne `font` (réservé aux thèmes, liable à `typography.fontFamily` et
+  `headingFamily`) : sa valeur est une option du thème ou une police téléversée par l'hébergeur ; les
+  validateurs reçoivent la liste des familles téléversées (`isAllowedFontValue`). Nouveaux exports :
+  `uploadedFontFaces`, `isSafeUploadedFontFamily`, type `ThemeUploadedFont`, `ResolvedTheme.uploadedFonts`.
+  Hôte : polices WOFF2 seulement (en-tête vérifié), famille en liste blanche, licence de diffusion web
+  confirmée, quota distinct, suppression refusée tant qu'un réglage ou le CSS additionnel la cite ;
+  `@font-face` émis après ceux du thème et avant les tokens.
+- Hôte : **historique des publications** (20 par thème, auteur, date, version du thème), restaurable
+  dans le brouillon — jamais en ligne — par le chemin d'un enregistrement : ce qui ne passe plus
+  (image supprimée, réglage retiré par une mise à jour du thème) est écarté et listé.
+
+### Tranche G — contenus
+
+- `ThemeProductView.featured: boolean` : l'offre que l'hébergeur a cochée « mettre en avant » dans
+  le formulaire produit. Toujours présent, `false` par défaut ; le thème écrit le libellé du badge.
+- `ThemeShellContext.supportEmail?` (adresse de support de l'Identité, ou celle du revendeur sous sa
+  marque, sans repli sur celle de l'hébergeur) et `ThemeShellContext.statusPageUrl?` (URL publique de
+  la page de statut, absente sous une marque de revendeur).
+- `ThemeShellContext.authenticated` est désormais exact en vitrine (vrai quand le portail demande
+  l'enveloppe avec la session du visiteur). Pour l'affichage seulement.
+
+**Ce qu'un auteur de thème doit faire.** Pour rester chargé, rien, sauf s'il écrit un token refusé
+(voir plus bas) : le plancher `HOST_CONTRACT_COMPATIBLE_SINCE` reste à `0.16.0`, un thème qui
+déclare `^0.33.0` se charge toujours. Pour rester juste, en revanche :
+
+- **Poser les îlots devenus obligatoires** dans `service`, `account-security`, `ticket` et
+  `dns-zone`, si le thème fournit ces gabarits. Sans eux `check-extension` échoue, et sur une
+  instance le thème se charge quand même — le client perd alors 2FA, résiliation ou édition DNS.
+- **Relire ses tokens et valeurs d'option** : un `@` ou une fonction refusée par
+  `isSafeTokenValue` (`url(`, `image-set(`…) fait refuser le thème entier au chargement.
+- **Ne plus compter sur `| raw`, `{% echo %}` ni `{% cycle %}`** pour écrire du HTML : tout est
+  échappé. Un texte mis en forme passe par `format: "markdown"` et le filtre `markdown`.
+- **Vérifier son pied de page dans l'espace client**, où il est désormais rendu : `legalLinks` et
+  l'îlot `cookie-preferences`, faute de quoi le pied du noyau s'affiche en dessous.
+- **Vérifier sa typographie** : hauteurs de ligne et tailles de titres par défaut ont changé (voir
+  la tranche D), et `headingWeight` est enfin appliqué.
+- `ThemeFont.src` part du dossier de ressources ; une famille hors liste blanche (`isSafeThemeFont`)
+  n'est pas émise. Plus de `cssVar` sous `--shadow-` ni `--layout-`.
+- **S'il utilise un ajout de cette version** (sections, blocs, sous-groupes, conditions `notEquals`,
+  `in` ou en tableau, types `link` et `font`, `format: "markdown"`, `settingsLocale`, nouveaux
+  tokens), passer `engines.host` à `^0.34.0` : un noyau plus ancien le refuse alors au lieu
+  d'ignorer ces clés en silence.
+- Déclarer `settingsLocale` si les libellés du manifeste ne sont pas en anglais, et livrer
+  `locales/panel/<langue>.json` pour les autres langues du noyau. Ranger `previewPath` sur la
+  section (`settingGroups`) plutôt que sur un champ.
+- Pour recevoir la couleur principale choisie à l'installation, déclarer un réglage `color` lié à
+  `colors.primary` (sans `scheme`, ou `light`).
+
+## 0.33.0 — 2026-09-20
+
+Les réglages de thème atteignent la feuille de style. Jusqu'ici une couleur, un rayon ou une police
+choisis au panel n'avaient aucun chemin vers le CSS ; un thème « paramétrable » l'était par ses
+textes et ses interrupteurs, jamais par son apparence.
+
+- **Ajoutés** :
+  - `ConfigFieldType` : `color` (hexadécimal, sélecteur + contraste au panel) et `order` (ordre d'une
+    liste fermée, valeur `"a,b,c"` toujours complète). Réservés aux réglages de thème.
+  - `ConfigField.token` : le réglage remplace un token (`colors.primary`, `radii.md`,
+    `typography.headingFamily`, `density`, `colorScheme`…), fusionné entre les tokens du thème et la
+    marque de l'hébergeur. `ConfigField.cssVar` : variable propre au thème, préfixes du noyau
+    refusés. L'un ou l'autre, pas les deux.
+  - `ConfigField.min` / `max` / `step` / `unit` (curseur, bornes appliquées par le noyau),
+    `ConfigField.visibleWhen` (affichage conditionnel au panel), `ConfigFieldOption.sets` (un choix
+    qui remplit d'autres champs — une palette), `ConfigFieldOption.visibleWhen` (dans un `order`,
+    l'élément est marqué « masqué » quand son interrupteur est décoché).
+  - `ConfigFieldType` : `list` (éléments composés de `ConfigField.fields`, bornés par `maxItems`),
+    réservé aux thèmes, avec un contenu d'origine en JSON dans `defaultValue` ; `ConfigField.localized` (une valeur par langue sur `text`/`textarea`).
+    Les gabarits reçoivent un tableau d'objets pour l'un, une chaîne dans la langue de la page
+    pour l'autre : `ThemeShellContext.settings` et `ThemeViewContext.settings` passent de
+    `Record<string, string | number | boolean>` à `Record<string, ThemeSettingValue>`.
+  - **Aperçu dirigé** : `ConfigField.previewPath` — la page que l'aperçu du panel ouvre pour la
+    section de ce réglage — et `THEME_PREVIEW_PATHS`, la liste fermée des pages qu'un aperçu sait
+    servir, désormais partagée au lieu d'être recopiée dans le portail et dans le panel.
+  - **Traductions** : `ThemeDefinition.locales` + type `ThemeTranslations`. Un fichier JSON plat
+    par langue dans le dossier du thème, posé sous `t` dans tous les contextes de gabarit, avec
+    repli clé par clé sur la langue de l'instance. Jusqu'ici un thème n'avait que
+    `{% if locale == "en" %}`, intenable au-delà de quelques phrases.
+  - **Mode sombre** : `ThemeDefinition.tokensDark` (palette déclarée, empilée sur `tokens`),
+    `ConfigField.scheme` (`"dark"` alimente la palette sombre), `ThemeColorScheme` gagne `"auto"`,
+    `ResolvedTheme.tokensDark` / `cssVarsDark`. `themeToCss(tokens, cssVars, dark?)` émet un bloc
+    `@media (prefers-color-scheme: dark)` qui redéclare tout, valeurs dérivées comprises.
+  - `ResolvedTheme.cssVars`, `themeSettingStyle`, `themeSettingEditable`, `isHexColor`,
+    `CONFIG_FIELD_UNITS`, `MAX_LIST_ITEMS`, `ConfigFieldCondition`, `ConfigFieldUnit`,
+    `ThemeSettingValue`, `ThemeSettingItem`, `ThemeSettingScalar`, `ThemeSettingResolveOptions`.
+  - `themeSettingValues` prend des options `{ locale, fallbackLocale }`.
+- **Changé** : `themeSettingValues` borne un `number` à `min`/`max`, complète un `order`, écarte une
+  couleur invalide et ramène un `select` dont l'option a disparu à son défaut ; `invalidThemeSettings`
+  vérifie tout ce qui précède.
+
+**Ce qu'un auteur de thème doit faire.** Passer `engines.host` à `^0.33.0`. Rien d'autre n'est
+obligatoire.
+
 ## 0.32.0 — 2026-09-05
 
 Additif, aucune rupture de signature — pas même pour `HostContext.emit`, qui reste

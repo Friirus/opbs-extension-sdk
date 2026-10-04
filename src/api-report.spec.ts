@@ -76,7 +76,6 @@ describe("rapport d'API du SDK", () => {
 
     const expected = readFileSync(REPORT_PATH, "utf8");
     if (report !== expected) {
-      // eslint-disable-next-line no-console
       console.error(
         "Surface .d.ts du SDK modifiée. Si c'est voulu : régénérez avec " +
           "UPDATE_API_REPORT=1 pnpm --filter @opbs/extension-sdk test -- api-report, puis " +

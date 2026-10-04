@@ -201,6 +201,84 @@ const REGISTRAR_CAPABILITIES = [
 
 const DNS_CAPABILITIES = ["createZone", "deleteZone", "ptr", "syncZone"];
 
+/**
+ * Ce qu'un thème peut déclarer, et ce qu'un champ de configuration peut porter. Verrouillés après
+ * coup : `screenshot` et `maxLength` auraient pu entrer sans que rien n'échoue, alors que chacun
+ * change ce qu'un manifeste valide contient.
+ */
+const THEME_DEFINITION = [
+  "assets",
+  "favicon",
+  "fonts",
+  "locales",
+  "logo",
+  "pages",
+  "screenshot",
+  "script",
+  "settingGroups",
+  "settings",
+  "settingsLocale",
+  "stylesheet",
+  "templates",
+  "tokens",
+  "tokensDark",
+];
+
+const CONFIG_FIELD = [
+  "block",
+  "cssVar",
+  "defaultValue",
+  "fields",
+  "format",
+  "group",
+  "help",
+  "label",
+  "localized",
+  "max",
+  "maxItems",
+  "maxLength",
+  "min",
+  "name",
+  "options",
+  "placeholder",
+  "previewPath",
+  "required",
+  "scheme",
+  "step",
+  "subgroup",
+  "token",
+  "type",
+  "unit",
+  "visibleWhen",
+];
+
+/**
+ * Ce qu'un gabarit d'enveloppe et une carte d'offre peuvent lire. Verrouillés parce que ce sont
+ * les deux contextes que chaque thème rend : un membre retiré casse un thème publié sans qu'une
+ * ligne de son code ait changé, un membre ajouté mérite une entrée de CHANGELOG pour être connu.
+ */
+const THEME_SHELL_CONTEXT = [
+  "area",
+  "authenticated",
+  "catalogFamilies",
+  "companyName",
+  "legalLinks",
+  "logoUrl",
+  "nav",
+  "settings",
+  "statusPageUrl",
+  "supportEmail",
+];
+
+const THEME_PRODUCT_VIEW = [
+  "featured",
+  "id",
+  "name",
+  "priceFormatted",
+  "recurringLabel",
+  "resourceSpec",
+];
+
 const EXPORTS = [
   "AddonDescriptor",
   "AddonOffering",
@@ -208,6 +286,7 @@ const EXPORTS = [
   "AddonSubscriptionContext",
   "AvailabilityResult",
   "BackupOutcome",
+  "CONFIG_FIELD_UNITS",
   "CORE_EVENTS",
   "CapturedEvent",
   "CapturedLogEntry",
@@ -216,8 +295,11 @@ const EXPORTS = [
   "CheckoutOutcome",
   "CheckoutRequest",
   "ConfigField",
+  "ConfigFieldCondition",
   "ConfigFieldOption",
   "ConfigFieldType",
+  "ConfigFieldUnit",
+  "ConfigFieldValues",
   "ConsoleSession",
   "ContributedLabel",
   "ContributedPage",
@@ -246,6 +328,7 @@ const EXPORTS = [
   "HOST_CONTRACT_COMPATIBLE_SINCE",
   "HOST_CONTRACT_VERSION",
   "HostContext",
+  "MAX_LIST_ITEMS",
   "MethodSetupOutcome",
   "MethodSetupRequest",
   "ModulePageActionRequest",
@@ -300,13 +383,20 @@ const EXPORTS = [
   "StorageUsageSnapshot",
   "StoredMethodDetails",
   "SupportedLocale",
+  "THEME_ACCOUNT_PREVIEW_PATHS",
   "THEME_ISLANDS",
+  "THEME_MARKDOWN_MAX_LENGTH",
+  "THEME_PREVIEW_PATHS",
+  "THEME_RESERVED_SETTING_KEYS",
+  "THEME_TEXT_KEY_PATTERN",
+  "THEME_TEXT_MAX_LENGTH",
   "THEME_VIEWS",
   "THEME_VIEW_NAMES",
   "TestHostContext",
   "TestHostOptions",
   "ThemeAcceptInviteView",
   "ThemeAccountBillingView",
+  "ThemeAccountNav",
   "ThemeAccountPaymentMethodsView",
   "ThemeAccountPrivacyView",
   "ThemeAccountProfileView",
@@ -316,6 +406,7 @@ const EXPORTS = [
   "ThemeAccountView",
   "ThemeBundleView",
   "ThemeCartView",
+  "ThemeCatalogFamily",
   "ThemeCatalogView",
   "ThemeCategorySection",
   "ThemeColorScheme",
@@ -330,6 +421,7 @@ const EXPORTS = [
   "ThemeDomainView",
   "ThemeDomainsMineView",
   "ThemeDomainsView",
+  "ThemeElevation",
   "ThemeEmailContext",
   "ThemeFont",
   "ThemeForgotPasswordView",
@@ -343,14 +435,19 @@ const EXPORTS = [
   "ThemeKbArticleSummary",
   "ThemeKbArticleView",
   "ThemeKbView",
+  "ThemeLayout",
+  "ThemeLegalDocumentView",
   "ThemeLegalPrivacyView",
   "ThemeLegalTermsView",
   "ThemeLoginView",
+  "ThemeMarkdownBlock",
+  "ThemeMarkdownInline",
   "ThemeNavLink",
   "ThemePageBlock",
   "ThemePageDeclaration",
   "ThemePagination",
   "ThemePasswordPolicy",
+  "ThemePreviewPath",
   "ThemeProductView",
   "ThemeRadii",
   "ThemeRegisterView",
@@ -359,10 +456,16 @@ const EXPORTS = [
   "ThemeResellerClientView",
   "ThemeResellerClientsView",
   "ThemeResetPasswordView",
+  "ThemeServiceCommitments",
   "ThemeServiceConsoleView",
   "ThemeServiceSummary",
   "ThemeServiceView",
   "ThemeServicesView",
+  "ThemeSettingGroup",
+  "ThemeSettingItem",
+  "ThemeSettingResolveOptions",
+  "ThemeSettingScalar",
+  "ThemeSettingValue",
   "ThemeShellContext",
   "ThemeSsoCallbackView",
   "ThemeSsoLinkView",
@@ -370,22 +473,35 @@ const EXPORTS = [
   "ThemeTicketView",
   "ThemeTicketsView",
   "ThemeTokens",
+  "ThemeTranslations",
   "ThemeTypography",
+  "ThemeUploadedFont",
   "ThemeVerifyEmailView",
   "ThemeViewContext",
   "ThemeViewSpec",
   "UnknownExtensionError",
   "WebhookRequest",
+  "conditionHolds",
+  "configFieldConditions",
   "createTestHost",
   "declaredIslands",
   "invalidContributedPages",
   "invalidContributedScreens",
   "invalidThemePages",
+  "invalidThemeSettings",
+  "isAllowedFontValue",
+  "isConfigFieldVisible",
   "isEventDrivenChannel",
+  "isHexColor",
   "isProvidedContextView",
   "isReservedPageSlug",
+  "isSafeLinkValue",
+  "isSafeSettingUrl",
+  "isSafeThemeFont",
   "isSafeTokenValue",
+  "isSafeUploadedFontFamily",
   "isSecretField",
+  "isThemePreviewPath",
   "mergeDriverConfig",
   "mergeResourceSpec",
   "mergeThemeTokens",
@@ -400,6 +516,7 @@ const EXPORTS = [
   "missingUsageReporting",
   "modulePageHref",
   "modulePageThemeTemplatePath",
+  "parseThemeMarkdown",
   "readBoolean",
   "readNumber",
   "readString",
@@ -408,10 +525,18 @@ const EXPORTS = [
   "requireString",
   "resolveContributedLabel",
   "secretFieldNames",
+  "themeFontFaces",
   "themeIslandSpec",
   "themePageTemplatePath",
+  "themePanelStrings",
+  "themeSettingEditable",
+  "themeSettingStyle",
+  "themeSettingValues",
+  "themeSettingWarnings",
+  "themeTranslationReads",
   "themeViewSpec",
   "unknownIslands",
+  "uploadedFontFaces",
 ];
 
 describe("surface publique du contrat d'extension", () => {
@@ -480,6 +605,22 @@ describe("surface publique du contrat d'extension", () => {
 
   it("ne déclare que les capacités de dns connues", () => {
     expect(interfaceMembers("kinds/dns.ts", "DnsCapabilities")).toEqual(DNS_CAPABILITIES);
+  });
+
+  it("ne lit d'une section de thème que les clés documentées", () => {
+    expect(interfaceMembers("kinds/theme.ts", "ThemeDefinition")).toEqual(THEME_DEFINITION);
+  });
+
+  it("remet à l'enveloppe d'un thème exactement les clés documentées", () => {
+    expect(interfaceMembers("kinds/theme.ts", "ThemeShellContext")).toEqual(THEME_SHELL_CONTEXT);
+  });
+
+  it("remet à une carte d'offre exactement les clés documentées", () => {
+    expect(interfaceMembers("kinds/theme.ts", "ThemeProductView")).toEqual(THEME_PRODUCT_VIEW);
+  });
+
+  it("ne lit d'un champ de configuration que les clés documentées", () => {
+    expect(interfaceMembers("config-fields.ts", "ConfigField")).toEqual(CONFIG_FIELD);
   });
 
   it("porte un rappel utilisable quand l'un des verrous ci-dessus cède", () => {

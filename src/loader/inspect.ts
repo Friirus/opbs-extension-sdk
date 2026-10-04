@@ -64,6 +64,39 @@ function configFieldProblems(fields: ConfigField[] | undefined, where: string): 
     if (!field.label?.trim()) {
       problems.push(`${where} : champ "${field.name}" sans libellé — le formulaire afficherait une case anonyme`);
     }
+    // Types et attributs que seule la page de réglages d'un thème sait rendre. Ailleurs, le champ
+    // s'affiche sans ce qui le rend utilisable — un `image` sans bouton de téléversement, un
+    // `color` sans sélecteur — ou ne mène nulle part : un `token` n'a de feuille de style à
+    // alimenter que pour un thème.
+    if (
+      field.type === "image" ||
+      field.type === "color" ||
+      field.type === "order" ||
+      field.type === "list" ||
+      field.type === "link" ||
+      field.type === "font"
+    ) {
+      problems.push(
+        `${where} : champ "${field.name}" de type "${field.type}", réservé aux réglages de thème`,
+      );
+    }
+    if (field.token !== undefined || field.cssVar !== undefined || field.scheme !== undefined) {
+      problems.push(
+        `${where} : champ "${field.name}" — "token", "cssVar" et "scheme" n'ont de sens que dans les réglages d'un thème`,
+      );
+    }
+    // Le texte riche n'est mis en forme que par le filtre `markdown` d'un gabarit : ailleurs, la
+    // barre de mise en forme du panel produirait des astérisques que rien ne rend.
+    if (field.format !== undefined) {
+      problems.push(
+        `${where} : champ "${field.name}" — "format" n'a de sens que dans les réglages d'un thème`,
+      );
+    }
+    if (field.maxLength !== undefined && (!Number.isInteger(field.maxLength) || field.maxLength <= 0)) {
+      problems.push(
+        `${where} : champ "${field.name}" — "maxLength" doit être un entier strictement positif`,
+      );
+    }
   }
   return problems;
 }

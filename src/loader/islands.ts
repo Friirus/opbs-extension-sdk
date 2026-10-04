@@ -27,6 +27,17 @@ export interface ThemeTemplateFinding {
    * déjà.
    */
   strayComments: string[];
+  /**
+   * Cibles de `{% render %}` / `{% include %}` introuvables dans le thème.
+   *
+   * Le chemin part de la **racine du thème**, pas du gabarit qui l'écrit :
+   * `templates/partials/icon` et non `partials/icon`. Écrit en relatif — le réflexe de tous ceux
+   * qui viennent de Jekyll, où `include` part d'un dossier dédié — LiquidJS lève un `ENOENT`, le
+   * noyau retombe sur son écran React et la page reste parfaitement présentable. En apparence
+   * seulement : plus une ligne du thème ne s'affiche, et rien à l'écran ne le dit. C'est le même
+   * genre de défaut qu'un îlot oublié, et c'est pourquoi il se vérifie ici plutôt qu'au rendu.
+   */
+  missingPartials: string[];
 }
 
 /**
@@ -40,6 +51,23 @@ export interface ThemeTemplateFinding {
  * Lecture seule, aucun rendu : un gabarit qui échoue à l'exécution est déjà couvert par le repli
  * du noyau, alors qu'un îlot oublié rend une page qui s'affiche parfaitement et ne fait rien.
  */
+/**
+ * Cibles de `{% render %}` / `{% include %}` qui ne correspondent à aucun fichier du thème.
+ *
+ * Ne traite que les cibles écrites en littéral — `{% render page.template %}` reste hors de
+ * portée d'un contrôle statique, et le prétendre serait pire que de s'en abstenir. L'extension
+ * `.liquid` est facultative côté LiquidJS (`extname`), donc testée dans les deux formes.
+ */
+function missingRenderTargets(themeDir: string, source: string): string[] {
+  const targets = [...source.matchAll(/\{%-?\s*(?:render|include)\s+["']([^"']+)["']/g)].map(
+    (match) => match[1] ?? "",
+  );
+  return [...new Set(targets)].filter((target) => {
+    const base = join(themeDir, target);
+    return !existsSync(base) && !existsSync(`${base}.liquid`);
+  });
+}
+
 export function inspectThemeTemplates(
   themeDir: string,
   templatesDir = "templates",
@@ -64,6 +92,7 @@ export function inspectThemeTemplates(
       strayComments: [...source.matchAll(/\{#([\s\S]*?)#\}/g)].map((m) =>
         (m[1] ?? "").trim().split(/\s+/).slice(0, 6).join(" "),
       ),
+      missingPartials: missingRenderTargets(themeDir, source),
     });
   };
 

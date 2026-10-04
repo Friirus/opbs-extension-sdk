@@ -59,6 +59,9 @@ export const RESERVED_PAGE_SLUGS: string[] = [
   // panel — servi sur `admin.<DOMAIN>`, donc pas ici, mais un lien vers `/admin` est un réflexe.
   "status",
   "admin",
+  // Page d'exemple que l'aperçu du panel ouvrira pour montrer un thème sans contenu réel (données
+  // d'exemple, îlots inertes). Réservée avant d'exister, pour la même raison que `m` et `x`.
+  "theme-preview",
 ];
 
 const RESERVED = new Set(RESERVED_PAGE_SLUGS);

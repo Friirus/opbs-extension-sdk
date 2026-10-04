@@ -1,3 +1,61 @@
+// ==== config-conditions.d.ts ====
+/**
+ * Évaluation des conditions d'affichage (`visibleWhen`) d'un champ de configuration.
+ *
+ * Fonctions pures, sans rien de Node : ce fichier est réexporté par la racine du SDK, que les
+ * bundles **navigateur** des apps Next.js lisent (voir la note de `index.ts`). Le panel les
+ * appelle au rendu de chaque formulaire ; les réécrire côté panel, c'était la troisième copie
+ * d'une règle que le lecteur de manifeste et `check-extension` connaissent déjà.
+ */
+import type { ConfigField, ConfigFieldCondition } from "./config-fields";
+/** Valeurs d'un formulaire, telles que le panel les tient (chaînes) ou qu'un appelant les résout. */
+export type ConfigFieldValues = Readonly<Record<string, unknown>>;
+/** Ce dont l'évaluation a besoin d'un champ : son nom et sa condition. Une option s'y prête aussi. */
+type Conditioned = Pick<ConfigField, "name" | "visibleWhen">;
+/**
+ * Les conditions d'un `visibleWhen`, toujours en tableau : une condition seule et un tableau d'une
+ * condition disent la même chose, et aucun appelant n'a à distinguer les deux formes.
+ */
+export declare function configFieldConditions(visibleWhen: ConfigFieldCondition | readonly ConfigFieldCondition[] | undefined): ConfigFieldCondition[];
+/**
+ * Ce qui cloche dans la **forme** d'une condition, ou `null` si elle est bien formée.
+ *
+ * Partagé par le lecteur de manifeste (qui écarte la condition) et `invalidThemeSettings` (qui la
+ * signale) : une seule définition de « bien formée », sans quoi l'un laisserait passer ce que
+ * l'autre refuse. Une valeur booléenne est admise — `"equals": true` s'écrit naturellement dans un
+ * JSON — et comparée sous sa forme texte.
+ */
+export declare function conditionShapeProblem(raw: unknown): string | null;
+/**
+ * La condition tient-elle pour ces valeurs ?
+ *
+ * Une condition mal formée — ce que le type interdit mais qu'un JSON peut contenir — est **ignorée**
+ * (elle tient) : c'est ce que fait le lecteur de manifeste, qui l'écarte, et un champ affiché à tort
+ * se remarque, là où un champ masqué à jamais disparaît sans que personne ne sache qu'il existe.
+ */
+export declare function conditionHolds(condition: ConfigFieldCondition, values: ConfigFieldValues): boolean;
+/**
+ * Le champ est-il affiché, compte tenu des autres champs et des valeurs du moment ?
+ *
+ * **Transitif** : un champ est visible si toutes ses conditions tiennent *et* si chaque champ
+ * qu'elles nomment est lui-même visible. Sans cela, « Points de la conclusion » (qui dépend de
+ * « Afficher la liste », qui dépend de « Afficher la conclusion ») restait affiché quand la
+ * conclusion entière était masquée — un réglage sans effet, offert à l'édition.
+ *
+ * **Une boucle masque ses membres**, et tout ce qui en dépend : `A` visible si `B` l'est, `B` si
+ * `A` l'est, rien ne permet de trancher. `invalidThemeSettings` refuse la boucle, mais un thème
+ * déposé sans passer par `check-extension` ne doit pas pour autant faire tourner le panel à
+ * l'infini. Un renvoi vers un champ inconnu ne compte que par sa condition (valeur absente = `""`).
+ *
+ * `field` peut être une option d'un `order` (`{ name, visibleWhen }`) : même règle.
+ */
+export declare function isConfigFieldVisible(field: Conditioned, fields: readonly Conditioned[], values: ConfigFieldValues): boolean;
+/** Réservé au lecteur de manifeste. */
+export declare function noteDiscardedConditions(owner: object, problems: readonly string[]): void;
+/** Réservé à `invalidThemeSettings`. */
+export declare function discardedConditionsOf(owner: object): readonly string[];
+export {};
+
 // ==== config-fields.d.ts ====
 /**
  * Types de champ qu'un module peut déclarer. Le panel admin rend le formulaire à partir de cette
@@ -8,6 +66,71 @@ export type ConfigFieldType = "text" | "textarea" | "number" | "boolean" | "sele
 /** Saisie masquée, **chiffrée en base et jamais renvoyée en clair par l'API**. */
  | "password"
 /**
+ * Adresse web : rendue en `<input type="url">`, donc validée par le navigateur avant envoi.
+ *
+ * Ajouté pour les réglages de thème, où la moitié des champs visuels sont des images — et une
+ * image se désigne par son adresse, comme le logo de Paramètres › Identité. Utile à tout module
+ * qui demande une adresse de service plutôt qu'un identifiant.
+ */
+ | "url"
+/**
+ * Image téléversée depuis le panel, ou désignée par son adresse. **Réservé aux réglages de
+ * thème** : le noyau ne stocke des fichiers que pour eux, et `pnpm check-extension` refuse ce
+ * type ailleurs.
+ *
+ * La valeur reste une adresse — `/api/v1/theme-media/<id>.<ext>` après téléversement, ou une
+ * adresse `https:` saisie à la main —, si bien qu'un gabarit l'écrit tel quel dans un `src`.
+ */
+ | "image"
+/**
+ * Couleur, saisie au sélecteur du panel. La valeur est un hexadécimal (`#rgb` ou `#rrggbb`) et
+ * rien d'autre : c'est le seul format dont le noyau sait mesurer le contraste, et le seul qu'un
+ * `<input type="color">` sache relire.
+ *
+ * Seule, une couleur n'arrive qu'aux gabarits. Pour qu'elle atteigne la feuille de style, le
+ * champ la lie à un token (`token`) ou à une variable CSS du thème (`cssVar`).
+ */
+ | "color"
+/**
+ * Ordre d'une liste fermée — l'emplacement des blocs d'une page. `options` nomme les éléments,
+ * le panel les rend déplaçables, et la valeur est la liste de leurs `value` séparés par des
+ * virgules (`"families,steps,account"`), qu'un gabarit lit par `split`.
+ *
+ * Une chaîne et non un tableau : le type de `settings` ne change pas, donc aucun gabarit
+ * existant ne casse. L'ordre ne masque rien — montrer ou cacher un bloc reste un `boolean`.
+ */
+ | "order"
+/**
+ * Liste d'éléments, chacun composé des sous-champs de `fields` — des avis, une FAQ, des liens.
+ * L'hébergeur ajoute, retire et ordonne les éléments au panel ; le gabarit reçoit un tableau
+ * d'objets (`{% for review in settings.reviews %}{{ review.author }}`). **Réservé aux réglages
+ * de thème.** Un sous-champ ne peut être ni `list`, ni `order`, ni `password`, ni `provider`,
+ * et ne porte ni `token` ni `cssVar`.
+ */
+ | "list"
+/**
+ * Lien : un chemin du site (`/catalog`, `/infrastructure`) ou une adresse externe (`https:`,
+ * `mailto:`, `tel:`), validé par `isSafeLinkValue`. **Réservé aux réglages de thème**, admis comme
+ * sous-champ de `list` (les colonnes d'un pied de page).
+ *
+ * Distinct de `url` parce que ce n'est pas la même chose qu'on demande à l'hébergeur : `url` est
+ * une adresse de ressource (une image, un service), `link` une destination de navigation. Le
+ * panel lui propose donc les pages qui existent — la vitrine, ses propres pages de contenu, celles
+ * du thème — au lieu d'un champ vide où il faudrait deviner qu'on attend `/catalog`.
+ */
+ | "link"
+/**
+ * Famille de polices. **Réservé aux réglages de thème**, et liable aux seuls tokens
+ * `typography.fontFamily` et `typography.headingFamily`.
+ *
+ * La valeur est l'une des `options` du thème (une pile, `"Figtree", system-ui, sans-serif`), ou
+ * le nom d'une police que l'hébergeur a téléversée au panel (`Ma Police`), que le noyau complète
+ * d'une pile de repli en l'émettant. Distinct de `select` parce que la liste n'est pas fermée par
+ * le manifeste : les polices téléversées ne sont connues qu'à l'exécution, et les validateurs du
+ * SDK les reçoivent en paramètre — le SDK ne lit aucune base.
+ */
+ | "font"
+/**
  * Désigne une instance de fournisseur configurée pour ce module (un cluster, un vCenter, un
  * serveur). Le panel remplit lui-même la liste des choix : le module n'a pas à la connaître.
  */
@@ -15,7 +138,62 @@ export type ConfigFieldType = "text" | "textarea" | "number" | "boolean" | "sele
 export interface ConfigFieldOption {
     value: string;
     label: string;
+    /**
+     * Valeurs que ce choix pose sur d'autres champs quand on le sélectionne — une palette qui
+     * remplit six couleurs d'un coup. Clé : nom d'un champ déclaré ; valeur : ce qu'on y aurait tapé.
+     *
+     * Le panel applique, le noyau n'en sait rien : les champs remplis restent des champs ordinaires,
+     * modifiables un à un ensuite. Réservé aux réglages de thème.
+     */
+    sets?: Record<string, string>;
+    /**
+     * Pour un champ `order` : l'élément n'apparaît sur la page que si cette condition tient
+     * (`{ "field": "showSteps", "equals": "true" }`). Le panel le marque « masqué » dans la liste
+     * plutôt que de le retirer — on peut placer un bloc avant de l'activer. Le noyau ne s'en sert
+     * pas : c'est le gabarit qui montre ou cache.
+     *
+     * Un tableau de conditions veut dire « toutes », comme sur `ConfigField.visibleWhen`.
+     */
+    visibleWhen?: ConfigFieldCondition | ConfigFieldCondition[];
 }
+/**
+ * Condition d'affichage d'un champ : il n'apparaît que si un autre champ a telle valeur, n'a pas
+ * telle valeur, ou a l'une de plusieurs valeurs. **Exactement un opérateur** par condition.
+ *
+ * La valeur comparée est celle saisie dans l'autre champ, en chaîne : `"true"`/`"false"` pour un
+ * `boolean`, la `value` de l'option pour un `select`. Une union et non trois clés facultatives sur
+ * un même objet : `{ field, equals, in }` n'aurait aucun sens, et le type le refuse avant que le
+ * lecteur de manifeste n'ait à le faire.
+ *
+ * Pur confort de formulaire. Le noyau ignore la condition — un champ masqué garde sa valeur et
+ * le gabarit la reçoit toujours : c'est à lui de ne pas s'en servir. `conditionHolds` et
+ * `isConfigFieldVisible` l'évaluent, pour que le panel et quiconque d'autre en tirent la même
+ * réponse.
+ */
+export type ConfigFieldCondition = {
+    field: string;
+    equals: string;
+} | {
+    field: string;
+    notEquals: string;
+}
+/** Tableau non vide : une liste vide ne tiendrait jamais, ce qui masquerait le champ pour toujours. */
+ | {
+    field: string;
+    in: string[];
+};
+/**
+ * Clés que le noyau se réserve dans l'objet des réglages d'un thème (`$customCss`, `$texts` — CSS
+ * additionnel et textes du thème saisis au panel). Elles vivent dans le même JSON que les valeurs
+ * des réglages déclarés, d'où le `$` : la règle de nom d'un réglage (une lettre, puis lettres,
+ * chiffres ou `_`, voir `invalidThemeSettings`) ne peut pas en produire, si bien qu'aucun thème ne
+ * peut déclarer un réglage qui les écraserait. **Toute clé commençant par `$` appartient au
+ * noyau** ; celles-ci sont les seules utilisées aujourd'hui.
+ */
+export declare const THEME_RESERVED_SETTING_KEYS: readonly ["$customCss", "$texts"];
+/** Unités qu'un champ `number` peut porter jusqu'à la feuille de style. */
+export declare const CONFIG_FIELD_UNITS: readonly ["px", "rem", "em", "%", "vw", "vh", "ch"];
+export type ConfigFieldUnit = (typeof CONFIG_FIELD_UNITS)[number];
 export interface ConfigField {
     name: string;
     label: string;
@@ -26,9 +204,130 @@ export interface ConfigField {
     placeholder?: string;
     /** Texte d'aide affiché sous le champ. */
     help?: string;
-    /** Uniquement pour type "select". */
+    /** Pour les types `select`, `order` et `font`. */
     options?: ConfigFieldOption[];
+    /**
+     * Section sous laquelle le panel range ce champ : à la fois son titre et son **identifiant**.
+     *
+     * Sans lui, tous les champs se suivent dans l'ordre de déclaration — acceptable pour les trois
+     * réglages d'un module d'encaissement, illisible pour les vingt-cinq d'un thème. Pour un thème,
+     * la chaîne est celle du manifeste, jamais traduite : c'est elle que nomment
+     * `ThemeDefinition.settingGroups[].name` et la règle de `block` (même section), et une traduction
+     * incohérente couperait sinon une section en deux. Le panel affiche à côté un libellé traduit.
+     * Ordre des sections : celui de `settingGroups`, puis les groupes non déclarés dans l'ordre de
+     * leur première apparition.
+     */
+    group?: string;
+    /**
+     * **Thèmes seulement.** Intertitre repliable à l'intérieur de la section (`group`) — « Mode
+     * sombre » dans « Couleurs ». Chaîne source du manifeste, traduisible au panel comme `group`.
+     *
+     * Exige `group`, et exclut `block` : un réglage rattaché à un bloc s'affiche dans ce bloc.
+     */
+    subgroup?: string;
+    /**
+     * **Thèmes seulement.** Rattache ce réglage à un élément d'un champ `order` de la **même
+     * section** : la `value` d'une de ses options (`"steps"`). Le panel rend alors l'`order` en blocs
+     * dépliables, chacun portant ses propres réglages — le titre des étapes sous le bloc « Étapes »,
+     * plutôt qu'à trente lignes de là.
+     *
+     * Un champ `order` ne porte ni `block` ni `subgroup`.
+     */
+    block?: string;
+    /**
+     * **Thèmes seulement**, sur `textarea` (y compris sous-champ de `list`) : la valeur est un texte
+     * riche, écrit dans le sous-ensemble markdown de `parseThemeMarkdown` (paragraphes, gras,
+     * italique, liens, listes). Le panel ajoute une barre de mise en forme et un aperçu ; le gabarit
+     * reçoit toujours le texte brut, et le met en forme par `{{ settings.x | markdown }}` — jamais
+     * dans un attribut, où `pnpm check-extension` le signale.
+     *
+     * Une clé et non un type : la valeur reste un texte, localisable et borné comme les autres, et un
+     * thème qui ne l'applique pas au rendu montre simplement les astérisques.
+     */
+    format?: "markdown";
+    /**
+     * Longueur maximale d'une valeur texte (`text`, `textarea`, `url`, `link`), en caractères.
+     *
+     * Le panel affiche un compteur quand elle est déclarée, et le noyau refuse une valeur plus
+     * longue. Sans elle, pas de compteur : un compteur sans limite n'apprend rien à personne. Utile
+     * surtout aux thèmes, dont la mise en page casse sur un titre trois fois trop long.
+     */
+    maxLength?: number;
+    /**
+     * Bornes et pas d'un champ `number`. Avec `min` **et** `max`, le panel rend un curseur ; le
+     * noyau refuse une valeur hors bornes dans tous les cas.
+     */
+    min?: number;
+    max?: number;
+    step?: number;
+    /**
+     * Unité d'un champ `number` : affichée à côté de la valeur, et accolée à elle quand le champ
+     * est lié à un token ou à une variable CSS (`18` + `px`). Le gabarit, lui, reçoit le nombre nu.
+     *
+     * Obligatoire pour un nombre lié à un token, sauf les tokens **sans unité** —
+     * `typography.lineHeight`, `headingLineHeight` et `headingScale` —, où elle est au contraire
+     * refusée : `1.5px` n'est pas la hauteur de ligne `1.5`, et `1.25rem` ne multiplie rien.
+     */
+    unit?: ConfigFieldUnit;
+    /**
+     * Le champ n'apparaît au panel que si cette condition est remplie — ou, pour un tableau, si
+     * toutes le sont. **Transitif** : un champ dont la condition renvoie à un champ lui-même masqué
+     * est masqué aussi (voir `isConfigFieldVisible`), sans quoi « Points de la conclusion » restait
+     * affiché sous une conclusion désactivée. Une boucle de conditions masque tous ses membres ;
+     * `pnpm check-extension` la refuse.
+     */
+    visibleWhen?: ConfigFieldCondition | ConfigFieldCondition[];
+    /**
+     * **Thèmes seulement.** Token que ce réglage remplace : `"colors.primary"`, `"radii.md"`,
+     * `"typography.headingFamily"`, `"density"`… Le noyau pose la valeur par-dessus les tokens du
+     * thème ; seule la marque d'un revendeur passe encore devant, sur ses domaines et pour ses
+     * clients.
+     *
+     * Passer par un token plutôt que par une variable libre, c'est hériter de tout ce que le noyau
+     * en dérive : la couleur lisible sur un aplat, l'échelle d'espacement d'une densité, la taille
+     * des titres d'une échelle, les ombres d'un relief (`elevation`).
+     */
+    token?: string;
+    /**
+     * **Thèmes seulement.** Variable CSS du thème qui reçoit la valeur (`"--ag-hero-tint"`), émise
+     * dans le même bloc `:root` que les tokens. Pour ce qu'aucun token ne décrit.
+     *
+     * Les préfixes du noyau (`--brand-`, `--radius-`, `--space-`, `--font-size-`) sont refusés : un
+     * réglage qui les écraserait contournerait les valeurs dérivées. Types admis : `color`,
+     * `number`, `select`.
+     */
+    cssVar?: string;
+    /**
+     * **Thèmes seulement**, sur `text` et `textarea` : une valeur par langue de l'instance. Le panel
+     * montre un onglet par langue ; le gabarit reçoit la valeur de la langue de la page, sinon celle
+     * de la langue par défaut de l'instance, sinon la première renseignée, sinon `defaultValue`.
+     */
+    localized?: boolean;
+    /**
+     * **Thèmes seulement**, avec `token` ou `cssVar` : la palette que ce réglage alimente. `"dark"`
+     * vise le mode sombre (`ThemeDefinition.tokensDark`), `"light"` — le défaut — l'apparence
+     * ordinaire. Sans mode sombre déclaré par le thème, un réglage `"dark"` n'a aucun effet.
+     */
+    scheme?: "light" | "dark";
+    /**
+     * **Thèmes seulement. Déprécié** au profit de `ThemeDefinition.settingGroups[].previewPath` : la
+     * page d'aperçu est une propriété de la section, pas d'un réglage. Reste lu comme **repli** —
+     * quand la section ne déclare pas la sienne, le premier réglage de la section qui en porte une
+     * décide pour toute la section.
+     *
+     * Un chemin que `isThemePreviewPath` accepte : une page de `THEME_PREVIEW_PATHS` ou de
+     * `THEME_ACCOUNT_PREVIEW_PATHS`, ou `/<slug>` d'une page déclarée par le thème.
+     */
+    previewPath?: string;
+    /** Sous-champs d'un `list`. */
+    fields?: ConfigField[];
+    /** Nombre maximal d'éléments d'un `list`. Le noyau refuse au-delà. */
+    maxItems?: number;
 }
+/** Une valeur de réglage telle qu'un gabarit la reçoit. */
+export type ThemeSettingScalar = string | number | boolean;
+export type ThemeSettingItem = Record<string, ThemeSettingScalar>;
+export type ThemeSettingValue = ThemeSettingScalar | ThemeSettingItem[];
 /**
  * Un champ dont la valeur ne doit jamais ressortir de la base.
  *
@@ -322,8 +621,13 @@ export interface ExtensionStorage {
 export { ExtensionConfigError, UnknownExtensionError } from "./errors";
 export { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./locale";
 export type { SupportedLocale } from "./locale";
-export { isSecretField, readBoolean, readNumber, readString, requireNumber, requireOneOf, requireString, secretFieldNames, } from "./config-fields";
-export type { ConfigField, ConfigFieldOption, ConfigFieldType } from "./config-fields";
+export { isSecretField, readBoolean, readNumber, readString, requireNumber, requireOneOf, requireString, secretFieldNames, CONFIG_FIELD_UNITS, THEME_RESERVED_SETTING_KEYS, } from "./config-fields";
+export { isSafeLinkValue } from "./links";
+export { THEME_MARKDOWN_MAX_LENGTH, parseThemeMarkdown } from "./markdown";
+export type { ThemeMarkdownBlock, ThemeMarkdownInline } from "./markdown";
+export { conditionHolds, configFieldConditions, isConfigFieldVisible } from "./config-conditions";
+export type { ConfigFieldValues } from "./config-conditions";
+export type { ConfigField, ConfigFieldCondition, ConfigFieldOption, ConfigFieldType, ConfigFieldUnit, ThemeSettingItem, ThemeSettingScalar, ThemeSettingValue, } from "./config-fields";
 export { HOST_CONTRACT_COMPATIBLE_SINCE, HOST_CONTRACT_VERSION } from "./version";
 export { mergeDriverConfig, mergeResourceSpec } from "./merge";
 export { EXTENSION_KINDS } from "./manifest";
@@ -339,8 +643,8 @@ export { invalidContributedPages, invalidContributedScreens, modulePageHref, mod
 export type { ContributedLabel, ContributedPage, ContributedScreen, ModulePageActionRequest, ModulePageActionResult, ModulePageCustomer, ModulePageRequest, ModulePageResult, ModulePageService, PanelScreenHost, PanelScreenModule, PanelScreenMount, PanelScreenUnmount, ScreenActionSection, ScreenBundle, ScreenFormSection, ScreenSection, ScreenTableSection, } from "./kinds/ui";
 export { missingNodeCapacityReporting, missingProvisioningOperations, missingStorageUsageReporting, missingUsageReporting, NO_CAPABILITIES, NO_PROVISIONING_CAPABILITIES, } from "./kinds/provisioning";
 export type { BackupOutcome, ConsoleSession, NodeCapacitySnapshot, ProvisioningCapabilities, ProvisioningDescriptor, ProvisioningNetwork, ProvisioningNetworkAddress, ProvisioningOperation, ProvisioningOutcome, ProvisioningTarget, ResourceSpec, ServiceUsageSnapshot, StorageUsageSnapshot, SnapshotInfo, } from "./kinds/provisioning";
-export { DEFAULT_THEME_TOKENS, THEME_ISLANDS, THEME_VIEWS, THEME_VIEW_NAMES, declaredIslands, invalidThemePages, isProvidedContextView, isSafeTokenValue, mergeThemeTokens, missingRequiredIslands, themeIslandSpec, themePageTemplatePath, themeViewSpec, unknownIslands, } from "./kinds/theme";
-export type { PartialThemeTokens, ResolvedTheme, ThemeAcceptInviteView, ThemeAccountBillingView, ThemeAccountPaymentMethodsView, ThemeAccountPrivacyView, ThemeAccountProfileView, ThemeAccountReferralView, ThemeAccountSecurityView, ThemeAccountTeamView, ThemeAccountView, ThemeBundleView, ThemeCartView, ThemeCatalogView, ThemeCategorySection, ThemeColors, ThemeColorScheme, ThemeContentPageView, ThemeCustomPageView, ThemeDashboardView, ThemeDefinition, ThemeDensity, ThemeDnsZonesView, ThemeDnsZoneView, ThemeDomainsMineView, ThemeDomainsView, ThemeDomainView, ThemeEmailContext, ThemeFont, ThemeForgotPasswordView, ThemeHistoryView, ThemeHomeView, ThemeInvoiceSummary, ThemeInvoicesView, ThemeInvoiceView, ThemeIslandSpec, ThemeKbArticle, ThemeKbArticleSummary, ThemeKbArticleView, ThemeKbView, ThemeLegalPrivacyView, ThemeLegalTermsView, ThemeLoginView, ThemeNavLink, ThemePageBlock, ThemePageDeclaration, ThemePagination, ThemePasswordPolicy, ThemeProductView, ThemeRadii, ThemeRegisterView, ThemeResellerClientNewView, ThemeResellerBrandingView, ThemeResellerClientsView, ThemeResellerClientView, ThemeResetPasswordView, ThemeServiceConsoleView, ThemeServicesView, ThemeServiceSummary, ThemeServiceView, ThemeShellContext, ThemeSsoCallbackView, ThemeSsoLinkView, ThemeTicketNewView, ThemeTicketsView, ThemeTicketView, ThemeTokens, ThemeTypography, ThemeVerifyEmailView, ThemeViewContext, ThemeViewSpec, } from "./kinds/theme";
+export { DEFAULT_THEME_TOKENS, THEME_ISLANDS, THEME_VIEWS, THEME_VIEW_NAMES, declaredIslands, invalidThemePages, isProvidedContextView, isSafeSettingUrl, isHexColor, THEME_TEXT_KEY_PATTERN, THEME_TEXT_MAX_LENGTH, themeTranslationReads, themeSettingStyle, themeSettingEditable, MAX_LIST_ITEMS, isSafeTokenValue, isSafeThemeFont, isSafeUploadedFontFamily, isAllowedFontValue, uploadedFontFaces, themeFontFaces, THEME_PREVIEW_PATHS, THEME_ACCOUNT_PREVIEW_PATHS, isThemePreviewPath, themePanelStrings, themeSettingWarnings, mergeThemeTokens, missingRequiredIslands, themeIslandSpec, themePageTemplatePath, themeSettingValues, invalidThemeSettings, themeViewSpec, unknownIslands, } from "./kinds/theme";
+export type { PartialThemeTokens, ResolvedTheme, ThemeSettingResolveOptions, ThemeSettingGroup, ThemePreviewPath, ThemeTranslations, ThemeAcceptInviteView, ThemeAccountBillingView, ThemeAccountNav, ThemeAccountPaymentMethodsView, ThemeAccountPrivacyView, ThemeAccountProfileView, ThemeAccountReferralView, ThemeAccountSecurityView, ThemeAccountTeamView, ThemeAccountView, ThemeBundleView, ThemeCartView, ThemeCatalogView, ThemeCatalogFamily, ThemeCategorySection, ThemeColors, ThemeColorScheme, ThemeContentPageView, ThemeCustomPageView, ThemeDashboardView, ThemeDefinition, ThemeDensity, ThemeDnsZonesView, ThemeDnsZoneView, ThemeDomainsMineView, ThemeDomainsView, ThemeDomainView, ThemeElevation, ThemeEmailContext, ThemeFont, ThemeUploadedFont, ThemeForgotPasswordView, ThemeHistoryView, ThemeHomeView, ThemeInvoiceSummary, ThemeInvoicesView, ThemeInvoiceView, ThemeIslandSpec, ThemeKbArticle, ThemeKbArticleSummary, ThemeKbArticleView, ThemeKbView, ThemeLayout, ThemeLegalDocumentView, ThemeLegalPrivacyView, ThemeLegalTermsView, ThemeLoginView, ThemeNavLink, ThemePageBlock, ThemePageDeclaration, ThemePagination, ThemePasswordPolicy, ThemeProductView, ThemeRadii, ThemeRegisterView, ThemeResellerClientNewView, ThemeResellerBrandingView, ThemeResellerClientsView, ThemeResellerClientView, ThemeResetPasswordView, ThemeServiceCommitments, ThemeServiceConsoleView, ThemeServicesView, ThemeServiceSummary, ThemeServiceView, ThemeShellContext, ThemeSsoCallbackView, ThemeSsoLinkView, ThemeTicketNewView, ThemeTicketsView, ThemeTicketView, ThemeTokens, ThemeTypography, ThemeVerifyEmailView, ThemeViewContext, ThemeViewSpec, } from "./kinds/theme";
 export { isReservedPageSlug, RESERVED_PAGE_SLUGS } from "./reserved-slugs";
 export { missingAddonOperations } from "./kinds/addon";
 export type { AddonDescriptor, AddonOffering, AddonOutcome, AddonSubscriptionContext, } from "./kinds/addon";
@@ -1489,6 +1793,8 @@ export declare function missingRegistrarOperations(descriptor: Pick<RegistrarDes
  * de `manifest.ts`). Pour un thème il n'existe pas de second endroit où mentir : le manifeste est
  * la seule source, et elle est inerte — le panel peut décrire un thème sans rien exécuter.
  */
+import { type ConfigField, type ThemeSettingValue } from "../config-fields";
+import { type SupportedLocale } from "../locale";
 /**
  * Palette complète.
  *
@@ -1512,25 +1818,83 @@ export interface ThemeColors {
     success: string;
     warning: string;
     danger: string;
+    /**
+     * Couleur des liens du texte. Absente, elle vaut `accent` — **résolu**, pas celui des défauts :
+     * un défaut littéral figerait les liens sur l'ancienne teinte d'un thème qui change son accent.
+     * D'où l'optionnel, là où les dix couleurs ci-dessus sont toutes déclarées par le noyau.
+     */
+    link?: string;
+    /** Anneau de focus clavier. Absente, elle vaut `accent`, pour la même raison que `link`. */
+    focus?: string;
 }
 /** Rayons de bordure. Un thème anguleux met tout à `0`, et c'est un changement très visible. */
 export interface ThemeRadii {
     sm: string;
     md: string;
     lg: string;
+    /**
+     * Rayon des boutons. Absent, il vaut `md` : un thème qui arrondit ses cartes arrondit aussi ses
+     * boutons sans rien déclarer de plus, et seul celui qui veut des boutons en pilule le dit.
+     */
+    button?: string;
 }
 export interface ThemeTypography {
     /** Police du texte courant. */
     fontFamily: string;
-    /** Police des titres. Vaut `fontFamily` si le thème n'en distingue pas. */
+    /**
+     * Police des titres.
+     *
+     * Tant qu'aucune couche ne lui donne une valeur distincte de `fontFamily`, elle suit la police
+     * du texte **résolue** — y compris celle qu'une marque pose par-dessus le thème (voir
+     * `mergeThemeTokens`). Un thème qui ne déclare que `fontFamily` a donc ses titres dans sa police,
+     * et non dans l'Inter des défauts du noyau.
+     */
     headingFamily: string;
     /** Police à chasse fixe : identifiants de machines, empreintes, références de facture. */
     monoFamily: string;
-    /** Taille de base, à laquelle toute l'échelle typographique est relative. */
+    /**
+     * Taille de base. Les titres en dérivent (`headingScale`) ; `--font-size-sm`, `-lg` et `-xl`
+     * restent des constantes de la plateforme — aucun ratio unique ne redonne leurs valeurs
+     * historiques, et les dériver aurait changé le rendu de toutes les instances.
+     */
     baseSize: string;
     bodyWeight: string;
     headingWeight: string;
+    /** Hauteur de ligne du texte courant, **sans unité** (`"1.5"`) : elle suit alors la taille de
+     *  chaque élément au lieu d'être figée sur celle du parent. */
+    lineHeight: string;
+    /** Hauteur de ligne des titres, sans unité : plus serrée que le texte, un titre sur deux lignes
+     *  se lit comme un bloc. */
+    headingLineHeight: string;
+    /** Interlettrage du texte courant, en longueur (`"0em"`, `"0.01em"`). */
+    letterSpacing: string;
+    /** Interlettrage des titres, en longueur. */
+    headingLetterSpacing: string;
+    /**
+     * Rapport entre deux niveaux de titre, sans unité : `h3` vaut `baseSize` × ratio, `h2` × ratio²,
+     * `h1` × ratio³. Un seul nombre plutôt que trois tailles : c'est l'échelle qui fait la cohérence
+     * d'une typographie, et trois valeurs libres ne la garantiraient pas.
+     */
+    headingScale: string;
 }
+/** Place de la navigation de l'espace client : colonne à gauche, ou barre au-dessus du contenu. */
+export type ThemeAccountNav = "sidebar" | "top";
+/** Mise en page : ce qui ne relève ni de la couleur, ni de la typographie, ni des rayons. */
+export interface ThemeLayout {
+    /** Largeur maximale du contenu principal, en longueur (`"72rem"`). */
+    containerMax: string;
+    /** Lue par le portail, qui dispose l'enveloppe de l'espace client en conséquence : aucune
+     *  variable CSS ne peut déplacer une navigation d'une colonne à une barre. */
+    accountNav: ThemeAccountNav;
+}
+/**
+ * Relief des surfaces : décide des ombres (`--shadow-sm`, `-md`, `-lg`).
+ *
+ * Un niveau plutôt que trois ombres libres : une ombre est une géométrie **et** une teinte, et la
+ * teinte doit suivre la palette — une ombre noire écrite par un thème clair devient invisible, ou
+ * sale, dès qu'une marque change le texte. `soft` reproduit les ombres historiques.
+ */
+export type ThemeElevation = "flat" | "soft" | "raised";
 /**
  * Densité : multiplie l'échelle d'espacement d'un bloc.
  *
@@ -1545,7 +1909,15 @@ export type ThemeDensity = "compact" | "comfortable" | "spacious";
  * ascenseurs, sélecteurs de date, champs remplis automatiquement. Sans lui, un thème clair reçoit
  * des contrôles natifs sombres, et l'illusion tombe sur le premier champ de formulaire.
  */
-export type ThemeColorScheme = "light" | "dark";
+/**
+ * Apparence du site. `auto` suit le système du visiteur (`prefers-color-scheme`) et n'a d'effet
+ * que si le thème déclare `tokensDark` — sans palette sombre, il n'y a rien à basculer.
+ *
+ * Porté par `tokens.colorScheme`, qui décidait jusqu'ici de la seule apparence des contrôles
+ * natifs. Le sens s'élargit sans se contredire : c'est toujours « en clair ou en sombre ? »,
+ * posé une fois pour le site entier au lieu des seuls ascenseurs.
+ */
+export type ThemeColorScheme = "light" | "dark" | "auto";
 /**
  * Tout ce qu'un thème peut redéfinir sans écrire une ligne de CSS.
  *
@@ -1559,6 +1931,8 @@ export interface ThemeTokens {
     radii: ThemeRadii;
     typography: ThemeTypography;
     density: ThemeDensity;
+    layout: ThemeLayout;
+    elevation: ThemeElevation;
 }
 /** Tokens tels qu'un thème les déclare : partiels à tous les niveaux. */
 export interface PartialThemeTokens {
@@ -1567,6 +1941,8 @@ export interface PartialThemeTokens {
     radii?: Partial<ThemeRadii>;
     typography?: Partial<ThemeTypography>;
     density?: ThemeDensity;
+    layout?: Partial<ThemeLayout>;
+    elevation?: ThemeElevation;
 }
 /**
  * Une police que le thème veut voir chargée.
@@ -1577,15 +1953,28 @@ export interface PartialThemeTokens {
  * diagnostiquer — on relit les tokens, qui sont justes.
  */
 export interface ThemeFont {
-    /** Nom de famille, tel qu'il apparaît dans `typography`. */
+    /**
+     * Nom de famille, tel qu'il apparaît dans `typography`.
+     *
+     * Avec `src`, il finit dans le `@font-face` que le noyau émet, et n'y est admis que s'il ne
+     * contient que des lettres ASCII, des chiffres, des espaces, `_` et `-` (64 caractères au plus,
+     * guillemets de bord ignorés) : `"Libre Franklin 2.0"` est écartée, le point n'y figurant pas.
+     * Voir `isSafeThemeFont`.
+     */
     family: string;
     /**
-     * Fichier de police, relatif au dossier du thème. Le noyau le sert et en fabrique le
-     * `@font-face`. Absent, `href` doit être renseigné.
+     * Fichier de police, relatif au **dossier de ressources** du thème (`assets`, par défaut
+     * `assets/`) et non au dossier du thème : il est servi sous la même URL que les autres ressources.
+     * Le noyau en fabrique le `@font-face`. Absent, `href` doit être renseigné.
      */
     src?: string;
     /** Feuille de style externe qui déclare la police (Google Fonts, Bunny, fonderie). */
     href?: string;
+    /**
+     * Graisse du fichier : `normal`, `bold` ou un nombre de 1 à 1000 (`"400"`), ou deux valeurs
+     * séparées d'un blanc pour une police variable (`"100 900"`). Une autre forme (`"semibold"`)
+     * fait écarter la police entière de `@font-face` — voir `isSafeThemeFont`.
+     */
     weight?: string;
     style?: "normal" | "italic";
     /** Défaut `swap` : afficher le texte tout de suite dans une police de repli vaut mieux que du
@@ -1602,6 +1991,16 @@ export interface ThemeFont {
  */
 export interface ThemeDefinition {
     tokens?: PartialThemeTokens;
+    /**
+     * Palette du **mode sombre**, empilée par-dessus `tokens` quand le système du visiteur le
+     * demande (`prefers-color-scheme: dark`) et que le thème a choisi de le suivre.
+     *
+     * Déclarée par le thème et jamais dérivée : inverser mécaniquement une palette claire donne des
+     * gris boueux et des aplats de marque illisibles. Sans cette clé, aucun bloc sombre n'est émis,
+     * quel que soit le réglage — un thème qui n'a pas pensé son mode sombre ne doit pas en avoir un
+     * de force.
+     */
+    tokensDark?: PartialThemeTokens;
     fonts?: ThemeFont[];
     /**
      * Dossier des ressources livrées par le thème, relatif à son dossier. Défaut `assets`.
@@ -1632,6 +2031,25 @@ export interface ThemeDefinition {
      */
     templates?: string;
     /**
+     * Dossier des traductions du thème, relatif à son dossier. Défaut `locales`.
+     *
+     * Un fichier par langue (`fr.json`, `en.json`…), plat, valeurs texte uniquement. Le noyau les
+     * charge et les pose sous `t` dans **tous** les contextes de gabarit :
+     * `{{ t.searchPlaceholder }}`. Une clé absente de la langue de la page retombe sur la langue par
+     * défaut de l'instance, puis disparaît — jamais de clé affichée brute.
+     *
+     * Exister était nécessaire : le portail est multilingue, les gabarits d'un thème ne l'étaient
+     * pas. `locale` permettait bien d'écrire `{% if locale == "en" %}…{% endif %}`, tenable pour
+     * trois phrases et pas pour une centaine — d'où des thèmes livrés dans une seule langue, dont
+     * les libellés se mélangeaient à ceux du noyau, eux traduits, sur la même page.
+     *
+     * Chaque clé est aussi **modifiable au panel**, langue par langue (« Textes du thème ») : le noyau
+     * range ces surcharges dans ses réglages (`$texts`) et les pose par-dessus le fichier au rendu.
+     * Un gabarit n'a rien à faire pour en profiter ; il peut marquer la zone qui affiche un texte
+     * (`data-theme-text="clé"`) pour que l'aperçu du panel y mène.
+     */
+    locales?: string;
+    /**
      * Pages que le thème apporte lui-même, à des URL que le noyau ne connaît pas.
      *
      * La différence avec tout le reste de ce contrat tient en une phrase : ailleurs, un thème
@@ -1645,11 +2063,54 @@ export interface ThemeDefinition {
      * d'autre que l'auteur ne sachant ce que cette page raconte.
      *
      * **Une page d'hébergeur au même slug l'emporte**, et ce n'est pas négociable : même règle que
-     * les réglages de marque face aux tokens du thème (voir `resolveActiveTheme`). Ignorer ce qu'un
-     * administrateur vient de saisir est le pire des deux mondes — il le ressaisirait en boucle sans
-     * jamais comprendre.
+     * les réglages publiés au panel face aux tokens déclarés par le thème (voir
+     * `resolveActiveTheme`). Ignorer ce qu'un administrateur vient de saisir est le pire des deux
+     * mondes — il le ressaisirait en boucle sans jamais comprendre.
      */
     pages?: ThemePageDeclaration[];
+    /**
+     * Réglages que l'hébergeur peut modifier depuis le panel, sans toucher un fichier.
+     *
+     * C'est la moitié qui manquait au contrat. Sans elle, un thème n'était paramétrable que par ses
+     * tokens — couleurs, rayons, polices — et tout le reste vivait en dur dans ses gabarits : le
+     * titre du hero, les libellés des boutons, l'image de présentation, les blocs à montrer ou non.
+     * Un hébergeur qui voulait changer une phrase devait éditer un `.liquid` par SSH, et son
+     * changement disparaissait à la mise à jour du thème.
+     *
+     * Mêmes `ConfigField` que les modules, donc même formulaire rendu par le panel et même
+     * validation : un thème n'obtient rien qu'un module n'ait déjà. Deux types sont refusés ici et
+     * `pnpm check-extension` le dit — `password`, parce qu'un thème n'a pas de code pour se servir
+     * d'un secret et qu'il n'a donc aucune raison d'en demander un ; `provider`, parce qu'il ne
+     * pilote aucun fournisseur.
+     *
+     * Les valeurs arrivent aux gabarits sous `settings` : `{{ settings.heroTitle }}`,
+     * `{% if settings.showSteps %}`. Un champ non renseigné prend son `defaultValue`, et un champ
+     * que le thème ne déclare plus disparaît du contexte — les valeurs stockées ne sont jamais
+     * rendues telles quelles, elles sont filtrées par la déclaration en cours.
+     */
+    settings?: ConfigField[];
+    /**
+     * Sections du panel de réglages, dans l'ordre où le rail les montre, chacune rattachée aux
+     * réglages dont le `group` porte son `name`.
+     *
+     * Sans elles, une section n'était qu'un titre déduit des champs : pas de description, pas de
+     * page d'aperçu propre (le premier champ décidait, voir `ConfigField.previewPath`), et un rail
+     * qui perdait une section dès que tous ses champs étaient masqués par une condition. Une section
+     * déclarée reste dans le rail en toutes circonstances. Les groupes non déclarés suivent, dans
+     * l'ordre de leur première apparition.
+     */
+    settingGroups?: ThemeSettingGroup[];
+    /**
+     * Langue dans laquelle le manifeste est écrit — libellés, aides, groupes, sous-groupes, options,
+     * descriptions de section. Défaut `"en"`.
+     *
+     * Le panel traduit ces textes dans la langue du membre du staff à partir de
+     * `<locales>/panel/<langue>.json` (clé = chaîne source exacte du manifeste, valeur = traduction) ;
+     * pour cette langue-ci, il n'y a rien à traduire et aucun fichier n'est lu. `pnpm check-extension`
+     * signale un fichier manquant, une chaîne non traduite ou une clé orpheline pour chaque autre
+     * langue de `SUPPORTED_LOCALES`.
+     */
+    settingsLocale?: SupportedLocale;
     /**
      * Script du thème, relatif à son dossier. Chargé en `defer` sur toutes les pages du portail.
      *
@@ -1665,6 +2126,51 @@ export interface ThemeDefinition {
      * client de tous les clients.
      */
     script?: string;
+    /**
+     * Capture d'écran du thème, relative à son dossier (et non au dossier `assets`, comme `logo`).
+     *
+     * Affichée dans le sélecteur de thèmes du panel, pour qu'un hébergeur voie ce qu'il applique
+     * avant de l'appliquer. PNG, JPEG ou WebP ; 1200 × 750 (16:10) recommandé, 400 Ko au plus.
+     * Absente, le panel dessine une vignette à partir des tokens du thème.
+     */
+    screenshot?: string;
+}
+/**
+ * Une section du panel de réglages, déclarée par le thème (`ThemeDefinition.settingGroups`).
+ *
+ * Tout y est facultatif sauf le nom : une section déclarée sans rien d'autre sert déjà à fixer sa
+ * place dans le rail et à l'y garder quand ses champs sont masqués.
+ */
+export interface ThemeSettingGroup {
+    /**
+     * Identifiant de la section : la valeur de `ConfigField.group` des réglages qu'elle range. Chaîne
+     * source du manifeste, jamais traduite — le panel reçoit son libellé traduit à côté.
+     */
+    name: string;
+    /** Une ou deux phrases affichées en tête de section au panel. Traduisible comme les libellés. */
+    description?: string;
+    /**
+     * Intertitre du rail sous lequel la section se range : l'apparence (couleurs, typographie,
+     * mise en forme) ou le contenu (textes, blocs, pages). Défaut `"content"`.
+     */
+    category?: "appearance" | "content";
+    /**
+     * Page que l'aperçu ouvre quand on entre dans la section — un chemin que `isThemePreviewPath`
+     * accepte. Absente, le premier réglage de la section qui déclare un `previewPath` (déprécié)
+     * décide ; sinon l'aperçu reste où il est.
+     */
+    previewPath?: string;
+    /**
+     * Clés des textes du thème (`t.<clé>`, voir `ThemeDefinition.locales`) que cette section affiche :
+     * le panel les rend dans la section, sous l'intertitre « Textes », une entrée par clé, le texte du
+     * thème en indication. Sans elles, un texte ne se modifie que dans la section « Textes du thème »
+     * du noyau, qui les liste tous — loin du réglage d'à côté qui façonne le même bloc.
+     *
+     * Des identifiants et non des chaînes à traduire : `themePanelStrings` ne les compte pas, le
+     * panel montre la clé et le texte du thème dans la langue éditée. Une clé ne se range que dans une
+     * section ; `pnpm check-extension` signale une clé absente des traductions du thème.
+     */
+    texts?: string[];
 }
 /**
  * Une page apportée par le thème, déclarée dans son manifeste.
@@ -1703,12 +2209,70 @@ export interface ThemePageDeclaration {
  * qu'un auteur de thème a écrit. `page` lui rend sa propre déclaration, ce qui permet d'écrire le
  * titre une seule fois — dans le manifeste, d'où il sert aussi au `<title>` et à la nav.
  */
+/**
+ * Engagements de service annoncés par l'hébergeur.
+ *
+ * Chaque champ est absent tant qu'aucune valeur n'a été saisie, et c'est le point : un gabarit
+ * doit tester avant d'afficher. Le thème livré « encre » annonçait « 99,9 % de disponibilité »,
+ * « quatorze jours de sauvegarde » et « quatre heures de réponse » écrits en dur dans son gabarit
+ * — chaque hébergeur qui l'installait publiait donc, sous sa propre signature, des engagements
+ * qu'il n'avait jamais pris. Un thème peut décrire *où* ces chiffres apparaissent ; seul
+ * l'hébergeur peut décider *lesquels*.
+ *
+ * Déjà mis en forme, jamais bruts : `99,9 %` et non `999`. Un gabarit Liquid n'a pas accès à
+ * `Intl`, et laisser chaque thème formater produirait autant de conventions que de thèmes.
+ */
+export interface ThemeServiceCommitments {
+    /** Disponibilité annoncée, formatée dans la locale de l'instance (« 99,9 % »). */
+    uptime?: string;
+    /** Rétention des sauvegardes, en jours. */
+    backupRetentionDays?: number;
+    /** Délai de première réponse du support, en heures ouvrées. */
+    supportResponseHours?: number;
+}
 export interface ThemeCustomPageView extends ThemeViewContext {
     view: "theme-page";
+    /**
+     * Ce que l'hébergeur s'engage à tenir, s'il l'a renseigné. Objet toujours présent, champs
+     * toujours facultatifs : un gabarit teste `commitments.uptime`, jamais `commitments`.
+     */
+    commitments: ThemeServiceCommitments;
     page: {
         slug: string;
         title: string;
     };
+}
+/**
+ * Une famille du catalogue, telle que l'enveloppe la reçoit — **avec ses sous-familles et ses
+ * offres**.
+ *
+ * La première version ne portait qu'un nom et un prix d'appel, et c'était trop peu : le menu
+ * déroulant qu'attend une vitrine d'hébergeur montre les familles en colonnes et, sous chacune,
+ * les offres avec leur prix. Un thème n'avait alors que deux mauvaises options — écrire ces offres
+ * en dur, donc publier le catalogue d'un autre, ou renvoyer vers une page pour la moindre
+ * information.
+ *
+ * L'arbre est rendu tel qu'il est saisi au back-office : `children` porte les sous-catégories, et
+ * une famille peut parfaitement n'en avoir aucune. Un gabarit qui n'en veut pas lit `products` et
+ * ignore `children` ; un gabarit qui construit un menu à colonnes lit les deux.
+ *
+ * Le volume est celui du catalogue publié, pas davantage : mêmes offres que la vue `catalog`, sans
+ * les caractéristiques techniques. Un thème qui ne veut montrer que les premières limite dans son
+ * gabarit (`{% for product in family.products limit: 5 %}`) — le noyau ne tronque pas à sa place,
+ * il ne saurait pas où.
+ */
+export interface ThemeCatalogFamily {
+    id: string;
+    name: string;
+    description?: string;
+    /** Offres de cette famille seule, sous-familles exclues. */
+    products: ThemeProductView[];
+    /** Sous-familles, dans l'ordre du back-office. Vide si la famille n'en a pas. */
+    children: ThemeCatalogFamily[];
+    /** Offres de la famille **et** de toutes ses sous-familles : ce qu'annonce un menu. */
+    productCount: number;
+    /** Prix de l'offre la moins chère de la famille, sous-familles comprises, déjà mis en forme. */
+    fromPriceFormatted?: string;
 }
 /** Un lien de navigation, tel qu'un gabarit d'enveloppe le reçoit. */
 export interface ThemeNavLink {
@@ -1728,9 +2292,65 @@ export interface ThemeShellContext {
     logoUrl?: string;
     /** Liens à afficher, dans l'ordre. Diffère entre la vitrine publique et l'espace client. */
     nav: ThemeNavLink[];
+    /**
+     * Documents légaux **réellement publiés** par l'hébergeur (mentions légales, CGV, politique de
+     * confidentialité, remboursement, cookies), à poser en pied de page.
+     *
+     * Séparé de `nav` parce qu'ils n'ont pas la même place ni le même rôle : `nav` mène à ce qu'on
+     * vend, ceux-ci à ce qu'on doit dire. Un thème qui ignore ce tableau prive son instance des
+     * seuls liens que la loi impose de rendre accessibles — c'est pourquoi les deux thèmes livrés
+     * les rendent, et pourquoi le rendu de repli du portail les rend aussi.
+     *
+     * Ne contient que les documents dont le texte existe : un lien vers une page qui annonce
+     * « non encore publié » est pire que pas de lien, il donne l'apparence de la conformité.
+     */
+    legalLinks: ThemeNavLink[];
+    /**
+     * Familles du catalogue — **vitrine uniquement**, absent dans l'espace client.
+     *
+     * De quoi écrire le menu déroulant qu'a toute vitrine d'hébergeur. Sans lui, un thème n'avait
+     * d'autre choix que d'écrire les familles en dur dans son en-tête, donc de publier le catalogue
+     * d'un autre. Un gabarit teste `catalogFamilies.size` avant de dérouler quoi que ce soit : une
+     * instance sans catalogue actif n'en reçoit aucune.
+     */
+    catalogFamilies?: ThemeCatalogFamily[];
+    /**
+     * Réglages du thème actif, tels que l'hébergeur les a saisis au panel — valeurs par défaut du
+     * thème appliquées, booléens convertis (voir `themeSettingValues`).
+     *
+     * Présent dans l'enveloppe comme dans chaque vue : un thème a besoin de son libellé de bouton
+     * dans son en-tête et de son titre de section dans sa page d'accueil. Objet vide si le thème
+     * n'en déclare aucun.
+     */
+    settings: Record<string, ThemeSettingValue>;
     /** Vitrine publique ou espace client authentifié : un thème peut vouloir deux structures. */
     area: "marketing" | "account";
+    /**
+     * Le visiteur a-t-il une session client ? Toujours `true` dans l'espace client ; en vitrine,
+     * `true` quand le portail a demandé l'enveloppe avec le jeton du visiteur, vérifié par l'API.
+     *
+     * De quoi choisir entre « Se connecter » et « Mon espace » dans un en-tête. **Affichage
+     * seulement** : un gabarit ne protège rien, chaque page de l'espace client refait sa propre
+     * vérification. Une session expirée entre deux requêtes peut montrer « Mon espace » une fois de
+     * trop ; le clic mène alors à l'écran de connexion, jamais à des données.
+     */
     authenticated: boolean;
+    /**
+     * Adresse de support saisie dans Paramètres › Identité, ou celle du revendeur sous sa marque.
+     *
+     * Absente tant que personne ne l'a saisie : un pied de page qui affiche une adresse inventée
+     * enverrait les clients vers une boîte que personne ne lit. Un gabarit teste sa présence.
+     */
+    supportEmail?: string;
+    /**
+     * URL publique de la page de statut de l'instance (`apps/status-page`), si l'instance en
+     * annonce une.
+     *
+     * Absente quand l'hébergeur n'en publie pas, et sous la marque d'un revendeur : cette page est
+     * celle de l'hébergeur, et un lien vers elle défairait la marque blanche. Même règle que
+     * `supportEmail` — un lien vers une page qui n'existe pas est pire que pas de lien.
+     */
+    statusPageUrl?: string;
 }
 /** Une offre du catalogue, telle qu'un gabarit de page la reçoit. */
 export interface ThemeProductView {
@@ -1745,6 +2365,14 @@ export interface ThemeProductView {
         ramMb: number;
         diskGb: number;
     };
+    /**
+     * Offre que l'hébergeur a cochée « mise en avant » dans le formulaire produit du panel.
+     *
+     * Un booléen et non un libellé : le badge (« Recommandé », « Populaire »…) appartient au thème,
+     * qui le rédige dans ses propres textes. Le noyau ne dit que *quelle* offre, jamais *comment*
+     * l'annoncer. Plusieurs offres peuvent l'être à la fois ; `false` pour toutes par défaut.
+     */
+    featured: boolean;
 }
 /** Section du catalogue : une catégorie et les offres qu'elle contient. */
 export interface ThemeCategorySection {
@@ -1754,6 +2382,16 @@ export interface ThemeCategorySection {
     /** Profondeur dans l'arbre des catégories, pour un gabarit qui voudrait indenter. */
     depth: number;
     products: ThemeProductView[];
+    /**
+     * Prix de l'offre la moins chère de la section, déjà mis en forme (« dès 2,39 € TTC »).
+     *
+     * Fourni par le noyau parce qu'un gabarit ne peut pas le calculer : `priceFormatted` est une
+     * chaîne, et Liquid n'a ni comparaison numérique ni `Intl`. Trier les chaînes donne un résultat
+     * faux dès que deux montants n'ont pas le même nombre de chiffres — « 11,88 » passe avant
+     * « 2,39 ». Absent seulement si la section n'a aucune offre, ce qui n'arrive pas dans
+     * `sections` (les sections vides en sont retirées).
+     */
+    fromPriceFormatted?: string;
 }
 /** Une offre groupée du catalogue, telle qu'un gabarit la reçoit. */
 export interface ThemeBundleView {
@@ -1775,14 +2413,43 @@ export interface ThemeKbArticleSummary {
 /**
  * Un article complet.
  *
- * Ne dérive pas du résumé : un article ouvert n'a pas d'extrait, il a son corps. `body` est du
- * texte brut saisi au panel, jamais du HTML — Liquid l'échappe, et un gabarit ne peut pas
- * contourner cet échappement.
+ * Ne dérive pas du résumé : un article ouvert n'a pas d'extrait, il a son corps. Le corps existe
+ * sous deux formes, et c'est `bodyHtml` qu'un gabarit affiche : `body` est le texte source tel que
+ * saisi au panel, que le moteur échappe comme toute valeur — un gabarit ne peut pas le rendre en
+ * HTML, `| raw` et les balises `echo` et `cycle` y passent aussi.
  */
 export interface ThemeKbArticle {
     slug: string;
     title: string;
+    /**
+     * Le texte source de l'article, en Markdown limité (titres `##`, listes, citations, code, gras,
+     * italique, liens, images). Échappé à la sortie : à réserver à ce qui n'a pas besoin de mise en
+     * forme (une balise `<meta>`, un extrait). Les thèmes écrits avant 0.35.0, qui l'affichaient avec
+     * `white-space: pre-wrap`, continuent de rendre le texte brut, balisage visible.
+     */
     body: string;
+    /**
+     * Le corps rendu en HTML par le noyau (0.35.0), à placer tel quel : `{{ article.bodyHtml }}`, sans
+     * `| raw`. C'est une des trois sorties du contexte que le moteur n'échappe pas, parce que le
+     * noyau l'a construite : aucune balise n'y vient de la saisie (`<script>` écrit dans un article
+     * reste du texte), tout texte et toute valeur d'attribut sont échappés, et seuls ces éléments
+     * peuvent apparaître — `h2`, `h3`, `h4` (chacun avec un `id` préfixé `kb-`), `p`, `ul`, `ol`, `li`,
+     * `blockquote` (qui contient un `p`), `pre` > `code` (`class="language-…"` si la langue est
+     * connue), `hr`, `strong`, `em`, `code`, `br`, `a` (`rel="noopener noreferrer"` et
+     * `target="_blank"` sur un lien externe) et `img` (une image téléversée au panel, `loading="lazy"`).
+     * Le titre de l'article est le `h1` de la page : il n'y en a pas dans `bodyHtml`.
+     *
+     * Le noyau ne pose aucun style sur ces éléments : c'est au thème de mettre en forme sa prose. Un
+     * filtre qui transforme la valeur (`| truncate`, `| upcase`) rend une chaîne ordinaire, échappée.
+     */
+    bodyHtml: string;
+    /**
+     * Description pour les moteurs de recherche et les aperçus de partage (0.35.0) : celle que le
+     * rédacteur a saisie, sinon un extrait du corps (160 caractères au plus, sans balisage). Texte
+     * brut, échappé à la sortie. Vide pour un article sans texte (une image seule) : en Liquid, une
+     * chaîne vide est vraie, testez `{% if article.metaDescription != blank %}`.
+     */
+    metaDescription: string;
     tags: string[];
     updatedAtFormatted: string;
 }
@@ -1815,6 +2482,11 @@ export interface ThemeViewContext {
     view: string;
     companyName: string;
     /**
+     * Réglages du thème actif. Voir `ThemeDefinition.settings` pour ce qu'un thème peut déclarer, et
+     * `ThemeShellContext.settings`, qui porte les mêmes valeurs dans l'enveloppe.
+     */
+    settings: Record<string, ThemeSettingValue>;
+    /**
      * Langue dans laquelle rendre le gabarit.
      *
      * Un gabarit écrit ses propres libellés — le noyau ne les lui fournit pas, pas plus que WHMCS ou
@@ -1836,8 +2508,24 @@ export interface ThemeViewContext {
  * vue ajoutée demain n'aura pas à en déclarer un. Ils disent à l'auteur d'un thème ce qu'il peut
  * lire dans chaque gabarit, ce que la lecture de `THEME_VIEWS` seule ne donnerait pas.
  */
+/**
+ * Accueil de la vitrine.
+ *
+ * Reçoit le catalogue et les engagements, et non le seul nom de l'entreprise : sans eux, un
+ * gabarit d'accueil n'avait le choix qu'entre ne rien montrer et écrire des offres en dur — donc
+ * publier le catalogue d'un autre hébergeur que celui qui installe le thème. Les deux clés du
+ * catalogue sont exactement celles de `ThemeCatalogView`, pour qu'un gabarit écrit pour l'une se
+ * relise sans effort dans l'autre.
+ */
 export interface ThemeHomeView extends ThemeViewContext {
     view: "home";
+    sections: ThemeCategorySection[];
+    bundles: ThemeBundleView[];
+    /**
+     * Ce que l'hébergeur s'engage à tenir, s'il l'a renseigné. Objet toujours présent, champs
+     * toujours facultatifs : un gabarit teste `commitments.uptime`, jamais `commitments`.
+     */
+    commitments: ThemeServiceCommitments;
 }
 export interface ThemeCatalogView extends ThemeViewContext {
     view: "catalog";
@@ -1876,6 +2564,23 @@ export interface ThemeLegalTermsView extends ThemeViewContext {
     termsBody: string | null;
     /** CGV hébergées ailleurs : le gabarit y renvoie au lieu de rendre un corps. */
     termsUrl: string | null;
+}
+/**
+ * Mentions légales, politique de remboursement et politique de cookies partagent un seul contexte,
+ * parce qu'elles ont un seul contenu : un texte publié, ou rien. `view` les distingue, ce qui
+ * suffit à un gabarit qui voudrait les rendre différemment.
+ *
+ * La fiche d'identité de l'exploitant accompagne les trois plutôt que les seules mentions
+ * légales : c'est le noyau qui décide de l'afficher ou non dans son rendu de repli, mais un thème
+ * qui veut la rappeler en pied de page de sa politique de cookies n'a pas à être empêché.
+ */
+export interface ThemeLegalDocumentView extends ThemeViewContext {
+    view: "legal-notice" | "legal-refund" | "legal-cookies";
+    /** `null` tant que l'hébergeur n'a rien rédigé — le gabarit doit prévoir ce cas. */
+    body: string | null;
+    /** Identité de l'exploitant, déjà réduite aux lignes non vides. */
+    identity: string[];
+    contactEmail?: string;
 }
 /**
  * Un bloc d'une page créée par l'hébergeur depuis le back-office, **déjà résolu dans une langue**.
@@ -2539,7 +3244,13 @@ export declare function invalidThemePages(pages: ThemePageDeclaration[] | undefi
  */
 export interface ThemeEmailContext {
     subject: string;
-    /** Corps mis en paragraphes HTML, déjà échappé. */
+    /**
+     * Corps mis en paragraphes HTML par le noyau, à partir du texte qu'il a lui-même échappé.
+     *
+     * `{{ bodyHtml }}` le rend tel quel, sans `| raw` : c'est la seule valeur de ce contexte que le
+     * moteur n'échappe pas, parce que le noyau l'a construite. Un filtre qui la transforme
+     * (`| upcase`, `| truncate`) rend une chaîne ordinaire, qui repasse par l'échappement.
+     */
     bodyHtml: string;
     /** Corps tel quel, pour un thème qui composerait différemment. */
     bodyText: string;
@@ -2548,11 +3259,43 @@ export interface ThemeEmailContext {
     colors: ThemeColors;
 }
 /**
+ * Pages de la vitrine et de l'authentification que l'aperçu du panel sait ouvrir.
+ *
+ * Liste fermée, et partagée : le panel s'en sert pour peupler son sélecteur, `isThemePreviewPath`
+ * pour valider le `previewPath` d'une section. Toutes servies sans session. Le portail ne la lit
+ * plus pour ouvrir l'aperçu : il accepte tout chemin de sa propre origine, pour que le panel puisse
+ * recharger la page où l'on a navigué dans le cadre.
+ */
+export declare const THEME_PREVIEW_PATHS: readonly ["/", "/catalog", "/cart", "/domains", "/kb", "/legal/terms", "/legal/privacy", "/legal/notice", "/legal/refund", "/legal/cookies", "/login", "/register", "/forgot-password"];
+export type ThemePreviewPath = (typeof THEME_PREVIEW_PATHS)[number];
+/**
+ * Pages statiques de l'espace client qu'un réglage peut désigner comme page d'aperçu.
+ *
+ * Séparées de `THEME_PREVIEW_PATHS` parce qu'elles ne s'ouvrent pas de la même façon : elles
+ * exigent un client connecté, que l'aperçu n'a pas. Sans session, le portail les sert en page
+ * d'exemple (données fictives, actions désactivées) ; avec une session client, ce sont les vraies
+ * pages, habillées du brouillon. Ni pages de détail (`/services/[id]` : il faudrait un
+ * identifiant), ni pages revendeur, ni `/m/*`.
+ */
+export declare const THEME_ACCOUNT_PREVIEW_PATHS: readonly ["/dashboard", "/services", "/invoices", "/tickets", "/tickets/new", "/domains/mine", "/dns", "/history", "/account", "/account/profile", "/account/security", "/account/billing", "/account/payment-methods", "/account/privacy", "/account/referral", "/account/team", "/account/settings"];
+/**
+ * Un chemin que l'aperçu d'un thème peut viser : une page de la vitrine ou de l'authentification,
+ * une page statique de l'espace client, ou `/<slug>` d'une page que le thème déclare lui-même.
+ *
+ * Pure et sans état : la liste des slugs vient de l'appelant (`ThemeDefinition.pages`), puisque
+ * c'est le manifeste du thème, et lui seul, qui dit quelles pages il apporte. Comparaison exacte,
+ * sans normalisation — un chemin d'aperçu s'écrit comme la liste l'écrit.
+ */
+export declare function isThemePreviewPath(path: string, themePageSlugs?: readonly string[]): boolean;
+/** Traductions d'un thème pour une langue : des clés plates, des valeurs texte. */
+export type ThemeTranslations = Record<string, string>;
+/**
  * Le thème actif, tel que le noyau le résout et que les frontends le reçoivent.
  *
  * Distinct de `ThemeDefinition`, qui décrit ce qu'un thème *déclare* : celui-ci décrit ce que le
- * noyau a *décidé* après avoir empilé ses défauts, le thème choisi et les réglages de marque. Un
- * frontend n'a donc aucun empilement à refaire, ni même à savoir qu'il existe des thèmes.
+ * noyau a *décidé* après avoir empilé ses défauts, le thème choisi, les réglages publiés de ce
+ * thème et, le cas échéant, la marque d'un revendeur. Un frontend n'a donc aucun empilement à
+ * refaire, ni même à savoir qu'il existe des thèmes.
  *
  * Vit dans le SDK bien qu'il ne serve pas aux auteurs de modules : c'est le seul paquet à la fois
  * inerte et commun à l'API, au worker et aux deux frontends. Le placer dans le paquet d'interface
@@ -2576,6 +3319,26 @@ export interface ResolvedTheme {
     scriptUrl?: string;
     logoUrl?: string;
     companyName?: string;
+    /**
+     * Variables CSS que les réglages du thème posent (`ConfigField.cssVar`), à émettre avec les
+     * tokens. Absent quand aucun réglage n'en lie — le cas de tout thème écrit avant `0.29.0`.
+     */
+    cssVars?: Record<string, string>;
+    /**
+     * Tokens à appliquer sous `prefers-color-scheme: dark`, ou absent. Absent couvre les deux cas
+     * qui doivent se traiter pareil : le thème n'a pas de palette sombre, ou il en a une mais
+     * l'hébergeur a fixé l'apparence en clair ou en sombre.
+     */
+    tokensDark?: ThemeTokens;
+    /** Variables du thème pour le mode sombre — voir `ConfigField.scheme`. */
+    cssVarsDark?: Record<string, string>;
+    /**
+     * Polices téléversées au panel, dont le portail émet les `@font-face` (`uploadedFontFaces`)
+     * avant les tokens. Absent quand il n'y en a aucune. Toutes, pas seulement celles que les
+     * réglages choisissent : un `@font-face` ne télécharge rien tant qu'aucun texte ne s'en sert, et
+     * le CSS additionnel peut en nommer une.
+     */
+    uploadedFonts?: ThemeUploadedFont[];
 }
 /**
  * Valeurs de repli du noyau.
@@ -2585,15 +3348,212 @@ export interface ResolvedTheme {
  * premier rendu : un défaut qui n'existerait qu'en CSS ne pourrait pas être fusionné.
  */
 export declare const DEFAULT_THEME_TOKENS: ThemeTokens;
-/** Une valeur de token est-elle sûre à interpoler dans une feuille de style ? */
+/**
+ * Défauts d'une déclaration `theme.settings`, en clair, pour `pnpm check-extension`.
+ *
+ * Rend un tableau vide quand tout va bien. Les noms en doublon sont refusés parce que la valeur
+ * écrasée serait silencieusement perdue, et un `select` sans option parce que le panel afficherait
+ * une liste vide — deux défauts qu'on ne voit qu'en ouvrant la page de configuration.
+ *
+ * `theme` apporte ce que les champs seuls ne disent pas : les pages que le thème déclare (un
+ * `previewPath` peut viser `/<slug>` de l'une d'elles), ses sections (`settingGroups`) et la langue
+ * de son manifeste. Omis, ces contrôles-là portent sur un thème sans page ni section.
+ */
+export declare function invalidThemeSettings(fields: readonly ConfigField[] | undefined, theme?: Pick<ThemeDefinition, "pages" | "settingGroups" | "settingsLocale">): string[];
+/**
+ * Forme d'une clé de texte du thème : celle que `t.<clé>` sait lire dans un gabarit. Les mêmes
+ * règles que le nom d'un réglage, et pour la même raison — c'est un identifiant Liquid.
+ */
+export declare const THEME_TEXT_KEY_PATTERN: RegExp;
+/** Longueur maximale d'un texte du thème saisi au panel, par langue. */
+export declare const THEME_TEXT_MAX_LENGTH = 2000;
+/**
+ * Ce qu'un gabarit lit sous `t`, par lecture statique de sa source : les clés écrites `t.<clé>`,
+ * et `indexed` quand il indexe `t` par une variable (`t[key]`).
+ *
+ * Une seule lecture pour les deux lecteurs qui en ont besoin : `pnpm check-extension`, qui réclame
+ * chaque clé lue dans les traductions, et le panel, qui range chaque texte du thème sous les
+ * gabarits qui l'affichent. Deux expressions finiraient par ne pas trouver les mêmes clés. Une clé
+ * lue seulement par `t[variable]` ne se voit pas ici — le panel la range dans « Autres ».
+ */
+export declare function themeTranslationReads(source: string): {
+    keys: string[];
+    indexed: boolean;
+};
+/**
+ * Avis sur les réglages d'un thème : ce qui ne casse rien mais trahit presque toujours une erreur.
+ * Rendus par `pnpm check-extension` comme des avis, jamais comme des erreurs.
+ *
+ * Aujourd'hui : une section déclarée dans `settingGroups` qu'aucun réglage ne nomme dans son
+ * `group`. Elle apparaît vide dans le rail — souvent un nom de groupe retouché d'un seul côté.
+ */
+export declare function themeSettingWarnings(theme: Pick<ThemeDefinition, "settings" | "settingGroups">): string[];
+/**
+ * Toutes les chaînes du manifeste que le panel traduit, dans l'ordre de première apparition et
+ * sans doublon : libellés, aides, textes indicatifs, groupes, sous-groupes, libellés d'option,
+ * sous-champs de liste, descriptions de section.
+ *
+ * C'est la liste des clés attendues dans `<locales>/panel/<langue>.json`, et ce que
+ * `pnpm check-extension` confronte à chaque fichier. Les noms de section (`settingGroups[].name`)
+ * sont déjà des `group` : ils ne sont comptés qu'une fois.
+ */
+export declare function themePanelStrings(theme: Pick<ThemeDefinition, "settings" | "settingGroups">): string[];
+/**
+ * Valeurs telles que le **panel** les édite, en chaînes : un `list` et un texte localisé y sont
+ * du JSON (le tableau d'éléments, l'objet langue → texte), le reste est la chaîne stockée ou le
+ * défaut. Distinct de `themeSettingValues`, qui rend ce qu'un gabarit lit dans *une* langue —
+ * l'éditeur, lui, doit voir toutes les langues et tous les éléments.
+ */
+export declare function themeSettingEditable(fields: readonly ConfigField[] | undefined, stored: Record<string, unknown> | null | undefined): Record<string, string>;
+/** `#rgb` ou `#rrggbb`. Pas d'alpha : `readableTextOn` ne saurait pas quoi mesurer derrière. */
+export declare function isHexColor(value: string): boolean;
+/**
+ * Valeurs admises des tokens à liste fermée. Exportée pour le chargeur du manifeste
+ * (`loader/manifest.ts`), qui en dérive ses contrôles plutôt que d'en tenir une copie — deux listes
+ * écrites à la main finissent toujours par diverger, et c'est un thème refusé d'un côté et accepté
+ * de l'autre. Hors de l'index : ce n'est pas une surface publique.
+ */
+export declare const ENUM_TOKENS: Readonly<Record<string, readonly string[]>>;
+/**
+ * Chemins de `theme.tokens` qu'un thème déclare en vain : clé inconnue de cette version du noyau.
+ *
+ * Le chargeur les accepte — refuser un token que cette version ne connaît pas empêcherait un thème
+ * d'être compatible avec deux versions du noyau à la fois —, mais `check-extension` les signale :
+ * `colors.primaire` ou `typography.lineheight` ne produisent aucune erreur et aucun effet, et c'est
+ * précisément la faute de frappe qu'on ne trouve qu'en comparant deux captures. Les chemins connus
+ * sont ceux de `BINDABLE_TOKENS`, où tout token est liable : une seule table, pas deux à tenir.
+ * Hors de l'index, comme `ENUM_TOKENS`.
+ */
+export declare function unknownThemeTokenPaths(raw: unknown): string[];
+/**
+ * Ce que les réglages d'un thème changent à sa feuille de style : des tokens remplacés, et des
+ * variables CSS propres au thème.
+ *
+ * `values` sort de `themeSettingValues` — défauts déjà appliqués, booléens déjà convertis. Une
+ * valeur qui ne passerait pas dans une feuille de style est écartée ici une seconde fois, pour la
+ * même raison que partout ailleurs : une donnée en base peut précéder la règle qui l'aurait
+ * refusée.
+ */
+export declare function themeSettingStyle(fields: readonly ConfigField[] | undefined, values: Record<string, ThemeSettingValue>, 
+/** `"dark"` ne retient que les réglages marqués `scheme: "dark"`, et inversement. */
+scheme?: "light" | "dark", 
+/** Familles des polices téléversées, pour un réglage `font` (voir `ThemeSettingResolveOptions`). */
+uploadedFontFamilies?: readonly string[]): {
+    tokens: PartialThemeTokens;
+    cssVars: Record<string, string>;
+};
+/**
+ * Une adresse saisie dans un réglage peut-elle finir dans un `href` ou un `src` ?
+ *
+ * Liquid échappe le HTML, pas le protocole : `{{ settings.ctaHref }}` dans un `href` exécute un
+ * `javascript:` aussi bien échappé que brut. On n'accepte donc que `https:`, `http:` et un chemin
+ * du site (`/catalog`), et on refuse `//hote`, qui sort du site sous l'apparence d'un chemin.
+ *
+ * Refuser `//` en tête ne suffit pas : le navigateur retire tabulations et sauts de ligne d'une
+ * adresse avant de l'analyser, et lit `\` comme `/`. `/<tabulation>/hote` et `/<saut>/hote`
+ * passaient donc pour des chemins, où le navigateur lisait `//hote`. Un chemin ne contient ainsi
+ * ni blanc, ni caractère de contrôle, ni barre oblique inverse, **nulle part** et pas seulement en
+ * tête ; une adresse absolue, ni blanc ni caractère de contrôle.
+ */
+export declare function isSafeSettingUrl(value: string): boolean;
+/**
+ * Valeurs des réglages telles qu'un gabarit les reçoit.
+ *
+ * Trois règles, et chacune corrige un piège :
+ *
+ * 1. **La déclaration en cours fait loi.** Un réglage stocké que le thème ne déclare plus
+ *    disparaît, au lieu de traîner dans le contexte d'un gabarit qui ne l'attend plus.
+ * 2. **Un champ vide prend son défaut.** Sans quoi un hébergeur qui efface un titre obtient un
+ *    trou dans sa page, alors qu'il voulait revenir au texte d'origine.
+ * 3. **Les booléens sont de vrais booléens.** Un formulaire HTML envoie `"false"`, qui est *vrai*
+ *    en Liquid comme en JavaScript : sans conversion, décocher une case allumerait la section.
+ */
+export declare function themeSettingValues(fields: readonly ConfigField[] | undefined, stored: Record<string, unknown> | null | undefined, options?: ThemeSettingResolveOptions): Record<string, ThemeSettingValue>;
+export interface ThemeSettingResolveOptions {
+    /** Langue de la page rendue, pour les champs `localized`. */
+    locale?: string | null;
+    /** Langue par défaut de l'instance : repli d'un champ `localized` non traduit. */
+    fallbackLocale?: string | null;
+    /**
+     * Familles des polices téléversées au panel : une valeur `font` est admise si elle est l'une des
+     * `options` du thème **ou** l'une de celles-ci. Passées par l'appelant, qui seul lit la base ;
+     * absentes, seules les options du thème sont admises.
+     */
+    uploadedFontFamilies?: readonly string[];
+}
+/** Plafond d'un `list` sans `maxItems` : de quoi lister des avis, pas un catalogue. */
+export declare const MAX_LIST_ITEMS = 50;
+/**
+ * Une valeur de token est-elle sûre à interpoler dans une feuille de style ? Refuse, sans égard à
+ * la casse, ce qui sortirait de la déclaration ou de la balise `<style>`, `@`, et les fonctions qui
+ * font charger une adresse au navigateur (`url(`, `image(`, `image-set(`, `cross-fade(`,
+ * `element(`, `src(`) ou exécutaient du script (`expression(`).
+ */
 export declare function isSafeTokenValue(value: string): boolean;
+/**
+ * Le noyau émettra-t-il le `@font-face` de cette police ?
+ *
+ * Chaque valeur d'une police livrée (`src`) est interpolée dans un `<style>` posé tel quel dans la
+ * page : une famille valant `x</style><script>…` fermerait la balise pour tout le portail. D'où une
+ * liste blanche, appliquée au point d'émission (`themeFontFaces`, plus bas) quelle que soit la
+ * source de la police : famille faite de lettres ASCII, chiffres, espaces, `_` et `-` (64
+ * caractères au plus, guillemets de bord ignorés), graisse `normal`, `bold` ou de 1 à 1000 (deux
+ * valeurs pour une police variable), style `normal` ou `italic`, `display` parmi les cinq du CSS.
+ * Une police refusée est omise en entier et le texte retombe sur la suite de la pile de polices ;
+ * `check-extension` le signale à l'auteur, par ce même prédicat, pour que la liste ne vive qu'ici.
+ */
+export declare function isSafeThemeFont(font: Pick<ThemeFont, "family" | "weight" | "style" | "display">): boolean;
+/**
+ * Les `@font-face` des polices que le thème livre lui-même.
+ *
+ * Les polices déclarées par `href` n'apparaissent pas ici : ce sont des feuilles externes, servies
+ * par une balise `<link>` (voir `themeFontHrefs`). Les deux existent parce que les deux cas se
+ * rencontrent — un thème qui embarque ses fichiers reste utilisable hors ligne, un thème qui
+ * pointe une fonderie se met à jour tout seul.
+ */
+export declare function themeFontFaces(theme: Pick<ResolvedTheme, "fonts" | "assetBaseUrl">): string;
+/**
+ * Une valeur `font` est-elle admise : l'une des `options` du réglage, ou la famille d'une police
+ * téléversée ? Le contrôle des validateurs (enregistrement d'un brouillon), qui reçoivent la liste
+ * des familles de l'appelant — le SDK ne lit aucune base.
+ */
+export declare function isAllowedFontValue(field: Pick<ConfigField, "options">, value: string, uploadedFontFamilies?: readonly string[]): boolean;
+/**
+ * Une police téléversée au panel : sa famille et l'adresse publique de son fichier WOFF2
+ * (`/api/v1/theme-media/<id>.woff2`).
+ */
+export interface ThemeUploadedFont {
+    family: string;
+    url: string;
+}
+/**
+ * Le nom d'une police téléversée est-il admis ? La liste blanche de `isSafeThemeFont`, **sans**
+ * sa tolérance aux guillemets de bord ni aux blancs autour : ce nom est saisi au panel, stocké tel
+ * quel, puis comparé à la lettre aux valeurs des réglages — `"Ma Police"` et `Ma Police` seraient
+ * deux polices.
+ */
+export declare function isSafeUploadedFontFamily(family: string): boolean;
+/**
+ * Les `@font-face` des polices téléversées au panel, à placer avec ceux du thème, **avant** les
+ * tokens (qui les nomment).
+ *
+ * Fonction distincte de `themeFontFaces` parce que la source diffère : la famille vient d'un
+ * champ saisi au panel et l'adresse est absolue (pas sous `assetBaseUrl`). Chaque valeur est
+ * refiltrée ici, au point d'émission, quelle que soit la validation faite à l'envoi : ce bloc part
+ * dans un `<style>` posé par `dangerouslySetInnerHTML`, où une famille valant `x</style><script>`
+ * fermerait la balise pour tout le portail. Une police refusée est omise en entier.
+ */
+export declare function uploadedFontFaces(fonts: readonly ThemeUploadedFont[] | undefined): string;
 /**
  * Fusionne des tokens partiels sur une base, niveau par niveau.
  *
- * Sert à empiler défauts du noyau, puis thème actif, puis réglages de marque saisis par
- * l'hébergeur. Une fusion superficielle ne suffirait pas : un thème qui ne redéfinit que
+ * Sert à empiler défauts du noyau, puis thème actif, puis ses réglages publiés, puis la marque
+ * d'un revendeur. Une fusion superficielle ne suffirait pas : un thème qui ne redéfinit que
  * `colors.primary` effacerait les neuf autres couleurs, et l'interface deviendrait illisible sur
  * une déclaration parfaitement légitime.
+ *
+ * Une seule valeur n'est pas recopiée telle quelle : `typography.headingFamily`, qui suit
+ * `fontFamily` tant qu'aucune couche ne l'en distingue.
  */
 export declare function mergeThemeTokens(base: ThemeTokens, override?: PartialThemeTokens): ThemeTokens;
 
@@ -2965,6 +3925,35 @@ export declare function modulePageThemeTemplatePath(moduleId: string, pageId: st
  */
 export declare function invalidContributedPages(pages: ContributedPage[] | undefined, fileExists?: (relativePath: string) => boolean): string[];
 
+// ==== links.d.ts ====
+/**
+ * Un lien saisi au panel — réglage `link`, lien d'un texte markdown, bouton d'une page de contenu —
+ * peut-il finir dans un `href` ?
+ *
+ * **Un seul validateur** pour tous ces chemins, parce que chaque copie de la règle a fini par en
+ * oublier un morceau : `isSafeSettingUrl` ne refusait les blancs qu'en tête, et `/<tabulation>/hote`
+ * passait pour un chemin alors que le navigateur, qui retire tabulations et sauts de ligne de toute
+ * adresse, y lisait `//hote`. Le panel valide avec cette même fonction avant d'envoyer, l'API à
+ * l'enregistrement, le moteur au rendu : un lien accepté ici est accepté partout, et inversement.
+ *
+ * Deux formes, jugées sur la valeur **brute** (aucun `trim` : un blanc de bord sert justement à
+ * masquer un schéma) :
+ *
+ * - un chemin du site : un seul `/` en tête (`//hote` et `/\hote` sortent du site sous l'apparence
+ *   d'un chemin), et ni blanc, ni caractère de contrôle, ni barre oblique inverse **nulle part** ;
+ * - une adresse `https:`/`http:` (suivie de `//` et d'au moins un caractère), `mailto:` ou `tel:`
+ *   (suivis d'au moins un caractère), schéma insensible à la casse, sans blanc ni caractère de
+ *   contrôle.
+ *
+ * Liste blanche de formes et non liste noire de schémas : `javascript:`, `data:`, `vbscript:` et
+ * leurs variantes de casse ou d'entités ne ressemblent à aucune des deux. Une entité (`&#58;`)
+ * reste inerte, puisque le rendu échappe `&`.
+ *
+ * Distinct de `isSafeSettingUrl`, qui garde les réglages `url` et `image` : une image ne se charge
+ * pas depuis `mailto:`, et ces deux types gardent leur règle.
+ */
+export declare function isSafeLinkValue(value: string): boolean;
+
 // ==== loader/compatibility.d.ts ====
 /**
  * Le module se déclare-t-il compatible avec ce noyau ?
@@ -3108,18 +4097,18 @@ export interface ThemeTemplateFinding {
      * déjà.
      */
     strayComments: string[];
+    /**
+     * Cibles de `{% render %}` / `{% include %}` introuvables dans le thème.
+     *
+     * Le chemin part de la **racine du thème**, pas du gabarit qui l'écrit :
+     * `templates/partials/icon` et non `partials/icon`. Écrit en relatif — le réflexe de tous ceux
+     * qui viennent de Jekyll, où `include` part d'un dossier dédié — LiquidJS lève un `ENOENT`, le
+     * noyau retombe sur son écran React et la page reste parfaitement présentable. En apparence
+     * seulement : plus une ligne du thème ne s'affiche, et rien à l'écran ne le dit. C'est le même
+     * genre de défaut qu'un îlot oublié, et c'est pourquoi il se vérifie ici plutôt qu'au rendu.
+     */
+    missingPartials: string[];
 }
-/**
- * Inspecte les gabarits d'un thème déposé sur disque.
- *
- * Le pendant outillé de `missingRequiredIslands` (SDK), qui ne connaît qu'une source de gabarit :
- * ici on va la chercher, on nomme la vue depuis le nom du fichier, et on couvre aussi ce qui n'est
- * pas une vue mais peut porter des îlots : l'enveloppe (`language-switcher`) et les pages que le
- * thème apporte lui-même (`custom/`).
- *
- * Lecture seule, aucun rendu : un gabarit qui échoue à l'exécution est déjà couvert par le repli
- * du noyau, alors qu'un îlot oublié rend une page qui s'affiche parfaitement et ne fait rien.
- */
 export declare function inspectThemeTemplates(themeDir: string, templatesDir?: string): ThemeTemplateFinding[];
 
 // ==== loader/manifest.d.ts ====
@@ -3302,6 +4291,63 @@ export interface ExtensionDescriptor<TConfig = Record<string, unknown>> {
     runPageAction?(ctx: HostContext, request: ModulePageActionRequest): Promise<ModulePageActionResult>;
 }
 
+// ==== markdown.d.ts ====
+/**
+ * Texte riche des réglages de thème (`ConfigField.format: "markdown"`) : le **seul** analyseur, pur
+ * et sans dépendance, que le moteur de rendu sérialise en HTML et que le panel rend en éléments
+ * React pour son aperçu. Deux analyseurs finiraient par ne pas voir le même texte : l'aperçu
+ * montrerait un lien que la vitrine n'affiche pas, ou l'inverse.
+ *
+ * Sous-ensemble **fermé**, et c'est tout l'intérêt : paragraphes (séparés par une ligne vide), saut
+ * de ligne simple, `**gras**`, `*italique*` / `_italique_`, `[texte](lien)`, listes `- ` / `* ` et
+ * `1. `. Ni titre, ni image, ni HTML : un titre casserait la hiérarchie que le gabarit a posée, une
+ * image échapperait à la médiathèque du thème, et du HTML rouvrirait tout ce que l'échappement
+ * ferme. Un caractère qui n'ouvre rien de ce qui précède reste du texte.
+ *
+ * Analyse **linéaire**. Le texte d'un gabarit peut venir d'un client (le corps d'un ticket, si un
+ * thème y applique le filtre) : une expression régulière à retour arrière s'y ferait bloquer le fil
+ * de l'API par une entrée de quelques kilo-octets. Ici, chaque délimiteur trouve son partenaire par
+ * une table « prochaine occurrence » calculée en un passage, chaque caractère est lu au plus une
+ * fois par niveau d'imbrication, et l'imbrication est bornée (un gras ne contient pas de gras, un
+ * lien pas de lien). L'entrée elle-même est bornée à `THEME_MARKDOWN_MAX_LENGTH`.
+ */
+/** Longueur analysée au plus ; le reste est ignoré. */
+export declare const THEME_MARKDOWN_MAX_LENGTH = 20000;
+/** Un morceau de texte à l'intérieur d'un paragraphe ou d'un élément de liste. */
+export type ThemeMarkdownInline = {
+    type: "text";
+    text: string;
+}
+/** Saut de ligne simple à l'intérieur d'un paragraphe. */
+ | {
+    type: "break";
+} | {
+    type: "strong";
+    children: ThemeMarkdownInline[];
+} | {
+    type: "em";
+    children: ThemeMarkdownInline[];
+}
+/** `href` déjà passé par `isSafeLinkValue` : un lien refusé ne devient jamais ce nœud. */
+ | {
+    type: "link";
+    href: string;
+    children: ThemeMarkdownInline[];
+};
+export type ThemeMarkdownBlock = {
+    type: "paragraph";
+    children: ThemeMarkdownInline[];
+} | {
+    type: "list";
+    ordered: boolean;
+    items: ThemeMarkdownInline[][];
+};
+/**
+ * Analyse un texte markdown restreint (voir l'en-tête du fichier). Ne lève jamais : une valeur qui
+ * n'est pas une chaîne donne une liste vide, une syntaxe incomplète reste du texte.
+ */
+export declare function parseThemeMarkdown(text: string): ThemeMarkdownBlock[];
+
 // ==== merge.d.ts ====
 import type { ResourceSpec } from "./kinds/provisioning";
 /**
@@ -3414,7 +4460,7 @@ export declare function createTestHost(options?: TestHostOptions): TestHostConte
  * jalons franchis, et `public-surface.spec.ts` échoue désormais si la surface change sans que
  * cette ligne suive.
  */
-export declare const HOST_CONTRACT_VERSION = "0.32.0";
+export declare const HOST_CONTRACT_VERSION = "0.35.0";
 /**
  * Plus ancienne version du contrat encore compatible avec ce noyau.
  *
@@ -3426,6 +4472,11 @@ export declare const HOST_CONTRACT_VERSION = "0.32.0";
  *
  * Ne monte que sur une rupture non additive du contrat (signature changée, champ devenu
  * obligatoire, genre retiré) — jamais sur un simple ajout. Vaut `0.16.0` : dernière rupture non
- * additive à ce jour (voir `CHANGELOG.md`).
+ * additive à ce jour (voir `CHANGELOG.md`). La 0.33.0 est additive : les réglages de thème liés au
+ * CSS, les listes, les textes localisés, le mode sombre et les dictionnaires n'ôtent rien à ce
+ * qu'un module pouvait déjà lire. La 0.34.0 l'est aussi, à une exception annoncée : des îlots
+ * deviennent obligatoires, ce qui fait échouer `check-extension` sur un thème qui ne les pose pas,
+ * sans l'empêcher de se charger — le moteur ne vérifie pas les îlots au chargement. La 0.35.0 est
+ * purement additive : deux champs de plus sur `ThemeKbArticle`, que les gabarits existants ignorent.
  */
 export declare const HOST_CONTRACT_COMPATIBLE_SINCE = "0.16.0";

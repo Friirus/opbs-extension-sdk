@@ -19,15 +19,28 @@
  * Imports relatifs plutôt que `@opbs/extension-sdk` : ce fichier fait partie du paquet, qui ne
  * peut pas s'importer lui-même par son propre nom avant d'être installé.
  */
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { invalidThemePages, type ConfigField, type ContributedScreen, type ExtensionDescriptor } from "../index";
+import {
+  invalidThemePages,
+  invalidThemeSettings,
+  isSafeThemeFont,
+  SUPPORTED_LOCALES,
+  themePanelStrings,
+  themeSettingWarnings,
+  themeTranslationReads,
+  type ConfigField,
+  type ContributedScreen,
+  type ExtensionDescriptor,
+} from "../index";
 import {
   discoverExtensions,
   inspectDescriptor,
   inspectThemeTemplates,
   type DiscoveredExtension,
 } from "../loader/index";
+// Hors de l'index, comme `ENUM_TOKENS` : un outil du paquet, pas une surface promise aux modules.
+import { unknownThemeTokenPaths } from "../kinds/theme";
 
 /** Un défaut relevé. `error` fait sortir en échec, `warn` informe sans bloquer. */
 interface Finding {
@@ -61,6 +74,25 @@ function checkConfigFields(fields: ConfigField[] | undefined, where: string): Fi
   const findings: Finding[] = [];
 
   for (const field of fields ?? []) {
+    // Rendus par la seule page de réglages d'un thème : ailleurs ils sont ignorés en silence, ce
+    // qui se corrige avant publication plutôt que de bloquer.
+    if (
+      field.min !== undefined ||
+      field.max !== undefined ||
+      field.step !== undefined ||
+      field.unit !== undefined ||
+      field.visibleWhen !== undefined ||
+      field.localized !== undefined ||
+      field.previewPath !== undefined ||
+      field.subgroup !== undefined ||
+      field.block !== undefined ||
+      (field.options ?? []).some((option) => option.sets !== undefined)
+    ) {
+      findings.push({
+        level: "warn",
+        message: `${where} : champ "${field.name}" — bornes, unité, "visibleWhen", "localized", "previewPath", "subgroup", "block" et "sets" ne sont rendus que par la page de réglages d'un thème`,
+      });
+    }
     if (field.type !== "select" && (field.options ?? []).length > 0) {
       findings.push({
         level: "warn",
@@ -180,6 +212,38 @@ function checkPages(descriptor: ExtensionDescriptor): Finding[] {
  * feuille de style manque se charge, s'applique, et rend une page à moitié peinte. La leçon a déjà
  * été apprise sur une police déclarée mais jamais chargée.
  */
+/**
+ * Clés de `theme.tokens` et `theme.tokensDark` que ce noyau ne connaît pas.
+ *
+ * Avis et non erreur : le chargeur les garde pour qu'un thème reste compatible avec deux versions
+ * du noyau (un token ajouté plus tard). Mais `typography.lineheight` n'a aucun effet et ne produit
+ * aucune erreur, et c'est ici seulement qu'une faute de frappe peut encore se voir. Lu dans le
+ * fichier brut : le manifeste analysé a déjà écarté les clés de premier niveau qu'il ne connaît pas.
+ */
+function checkThemeTokenKeys(entry: DiscoveredExtension): Finding[] {
+  if (!entry.manifest?.theme) {
+    return [];
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(join(entry.path, "extension.json"), "utf8"));
+  } catch {
+    // Illisible : le chargeur l'a déjà dit, et bien plus précisément.
+    return [];
+  }
+  const theme = (raw as { theme?: Record<string, unknown> } | null)?.theme;
+  const findings: Finding[] = [];
+  for (const key of ["tokens", "tokensDark"] as const) {
+    for (const path of unknownThemeTokenPaths(theme?.[key])) {
+      findings.push({
+        level: "warn",
+        message: `theme.${key}.${path} : token inconnu de ce noyau (faute de frappe ?) — il restera sans effet`,
+      });
+    }
+  }
+  return findings;
+}
+
 function checkThemeAssets(entry: DiscoveredExtension): Finding[] {
   const theme = entry.manifest?.theme;
   if (!theme) {
@@ -223,12 +287,387 @@ function checkThemeAssets(entry: DiscoveredExtension): Finding[] {
   mustExist(theme.stylesheet, "theme.stylesheet", "module");
   mustExist(theme.logo, "theme.logo", "assets");
   mustExist(theme.favicon, "theme.favicon", "assets");
+  mustExist(theme.screenshot, "theme.screenshot", "module");
+
+  // La capture est servie telle quelle dans le panel : un format que le navigateur n'affiche pas
+  // donne une vignette cassée, et une capture de plusieurs Mo ralentit tout le sélecteur.
+  if (theme.screenshot) {
+    if (!/\.(png|jpe?g|webp)$/i.test(theme.screenshot)) {
+      findings.push({
+        level: "error",
+        message: `theme.screenshot doit être un PNG, un JPEG ou un WebP : "${theme.screenshot}"`,
+      });
+    }
+    const full = join(entry.path, theme.screenshot);
+    if (existsSync(full) && statSync(full).size > 400 * 1024) {
+      findings.push({
+        level: "warn",
+        message: `theme.screenshot pèse ${Math.round(statSync(full).size / 1024)} Ko — 400 Ko au plus recommandés`,
+      });
+    }
+  }
 
   for (const [index, font] of (theme.fonts ?? []).entries()) {
     // `href` désigne une feuille externe qu'on ne peut pas vérifier d'ici ; `src` est un fichier
     // que le thème est censé livrer, servi comme les autres ressources.
     if (font.src) {
       mustExist(font.src, `theme.fonts[${index}].src`, "assets");
+      // Le noyau n'émet le `@font-face` que d'une police qui passe sa liste blanche, et omet les
+      // autres sans rien dire : le texte retombait sur la police système en production, alors que
+      // ce contrôle rendait OK. Un avis et non une erreur, puisque la page se rend.
+      if (!isSafeThemeFont(font)) {
+        findings.push({
+          level: "warn",
+          message:
+            `theme.fonts[${index}] (« ${font.family} ») : police écartée du @font-face — famille en ` +
+            `lettres ASCII, chiffres, espaces, _ ou - (64 au plus), graisse normal, bold ou 1 à 1000 ` +
+            `(deux pour une police variable), style normal ou italic, display auto, block, swap, ` +
+            `fallback ou optional`,
+        });
+      }
+    }
+  }
+  return findings;
+}
+
+/** Chaque gabarit `.liquid` du thème, sous-dossiers compris, avec son chemin relatif au thème. */
+function themeTemplateSources(
+  themeDir: string,
+  templatesDir: string,
+): Array<{ path: string; source: string }> {
+  const found: Array<{ path: string; source: string }> = [];
+  const walk = (relativeDir: string): void => {
+    const full = join(themeDir, relativeDir);
+    const items = existsSync(full) ? readdirSync(full, { withFileTypes: true }) : [];
+    for (const item of items.sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = `${relativeDir}/${item.name}`;
+      if (item.isDirectory()) {
+        walk(path);
+      } else if (item.name.endsWith(".liquid")) {
+        found.push({ path, source: readFileSync(join(themeDir, path), "utf8") });
+      }
+    }
+  };
+  walk(templatesDir);
+  return found;
+}
+
+/**
+ * Lignes d'un gabarit où une expression applique le filtre `raw`.
+ *
+ * Seul le balisage évalué compte (`{{ … }}`, `{% … %}`) : le contenu d'un bloc `{% raw %}` ou
+ * `{% comment %}`, et un commentaire en ligne `{% # … %}`, ne sont que du texte, et les signaler
+ * serait un avis qu'on sait faux. Les blocs écartés sont remplacés par des blancs de même
+ * longueur, pour que les numéros de ligne restent ceux du fichier.
+ */
+function rawFilterLines(source: string): number[] {
+  const evaluated = source.replace(
+    /\{%-?\s*(raw|comment)\s*-?%\}[\s\S]*?\{%-?\s*end\1\s*-?%\}/g,
+    (block) => block.replace(/[^\n]/g, " "),
+  );
+  const lines = new Set<number>();
+  for (const markup of evaluated.matchAll(/\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}/g)) {
+    if (/^\{%-?\s*#/.test(markup[0])) {
+      continue;
+    }
+    for (const filter of markup[0].matchAll(/\|\s*raw\b/g)) {
+      const offset = (markup.index ?? 0) + (filter.index ?? 0);
+      lines.add(evaluated.slice(0, offset).split("\n").length);
+    }
+  }
+  return [...lines];
+}
+
+/**
+ * `| raw` dans un gabarit de thème : sans effet, le noyau échappe toute sortie.
+ *
+ * Le moteur du noyau réenregistre `raw` sans son drapeau, précisément pour qu'aucun gabarit ne
+ * puisse faire sortir une valeur du contexte en HTML brut. Un auteur qui l'écrit attend pourtant ce
+ * HTML brut, et découvrira ses balises affichées en texte à l'écran : l'avis le lui dit avant. Un
+ * avis et non une erreur, puisque la page se rend et ne met rien en danger. Le seul HTML qui sort
+ * tel quel est celui que le noyau construit lui-même (`ThemeEmailContext.bodyHtml`), et il n'a pas
+ * besoin du filtre pour ça.
+ */
+function checkThemeRawFilters(entry: DiscoveredExtension): Finding[] {
+  const theme = entry.manifest?.theme;
+  if (!theme) {
+    return [];
+  }
+  const findings: Finding[] = [];
+  for (const { path, source } of themeTemplateSources(entry.path, theme.templates ?? "templates")) {
+    const lines = rawFilterLines(source);
+    if (lines.length > 0) {
+      findings.push({
+        level: "warn",
+        message:
+          `${path} (ligne${lines.length > 1 ? "s" : ""} ${lines.join(", ")}) : « | raw » sans effet, ` +
+          `le noyau échappe toute sortie — un HTML attendu brut s'affichera en texte (seul ` +
+          `\`bodyHtml\` d'un e-mail sort en HTML, et sans ce filtre)`,
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * Le balisage qu'un gabarit émet réellement : le contenu des blocs `{% comment %}` et `{% raw %}`,
+ * et des commentaires HTML, remplacé par des blancs de même longueur — les numéros de ligne
+ * restent ceux du fichier.
+ */
+function emittedMarkup(source: string): string {
+  return source.replace(
+    /\{%-?\s*(raw|comment)\s*-?%\}[\s\S]*?\{%-?\s*end\1\s*-?%\}|<!--[\s\S]*?-->/g,
+    (block) => block.replace(/[^\n]/g, " "),
+  );
+}
+
+/**
+ * Clés nommées par `data-theme-text="clé"` dans un gabarit, avec leur ligne. Une valeur calculée
+ * (`{{ … }}`) ne se juge pas sans rendu, elle est laissée de côté.
+ */
+function annotatedTextKeys(source: string): Array<{ line: number; key: string }> {
+  const emitted = emittedMarkup(source);
+  const found: Array<{ line: number; key: string }> = [];
+  for (const match of emitted.matchAll(/data-theme-text\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    const value = match[1] ?? match[2] ?? "";
+    if (value.includes("{{") || value.includes("{%")) {
+      continue;
+    }
+    const line = emitted.slice(0, match.index ?? 0).split("\n").length;
+    for (const key of value.split(/\s+/).filter((part) => part !== "")) {
+      found.push({ line, key });
+    }
+  }
+  return found;
+}
+
+/**
+ * Lignes d'un gabarit où `| markdown` est appliqué **à l'intérieur d'une balise ouverte** — dans un
+ * attribut (`title="{{ x | markdown }}"`) ou à sa place.
+ *
+ * Le filtre produit du HTML (`<p>`, `<a href="…">`), marqué sûr pour sortir tel quel entre deux
+ * balises. Dans un attribut, ce HTML n'a plus de sens : le noyau encode ses propres attributs pour
+ * qu'il reste inerte, mais la page affiche alors du balisage en guise d'infobulle. Un avis et non
+ * une erreur, puisque rien ne s'exécute.
+ *
+ * La position se juge sur le balisage émis, les expressions Liquid effacées : un `>` dans
+ * `{% if a > b %}` ne ferme aucune balise.
+ */
+function markdownInTagLines(source: string): number[] {
+  const emitted = emittedMarkup(source);
+  const html = emitted.replace(/\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}/g, (markup) =>
+    markup.replace(/[^\n]/g, " "),
+  );
+  const lines = new Set<number>();
+  for (const markup of emitted.matchAll(/\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}/g)) {
+    if (!/\|\s*markdown\b/.test(markup[0])) {
+      continue;
+    }
+    const offset = markup.index ?? 0;
+    const lastOpen = html.lastIndexOf("<", offset);
+    const lastClose = html.lastIndexOf(">", offset);
+    // Une balise ouverte : un `<` suivi d'un nom de balise, sans `>` depuis.
+    if (lastOpen > lastClose && /[a-zA-Z]/.test(html[lastOpen + 1] ?? "")) {
+      lines.add(emitted.slice(0, offset).split("\n").length);
+    }
+  }
+  return [...lines];
+}
+
+/** `| markdown` placé dans une balise ouverte : voir `markdownInTagLines`. */
+function checkThemeMarkdownPlacement(entry: DiscoveredExtension): Finding[] {
+  const theme = entry.manifest?.theme;
+  if (!theme) {
+    return [];
+  }
+  const findings: Finding[] = [];
+  for (const { path, source } of themeTemplateSources(entry.path, theme.templates ?? "templates")) {
+    const lines = markdownInTagLines(source);
+    if (lines.length > 0) {
+      findings.push({
+        level: "warn",
+        message:
+          `${path} (ligne${lines.length > 1 ? "s" : ""} ${lines.join(", ")}) : « | markdown » dans ` +
+          `une balise ouverte (attribut) — le filtre produit des paragraphes et des liens, qui ` +
+          `n'ont leur place qu'entre deux balises ; l'attribut afficherait du balisage`,
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * `data-theme-setting` qui nomme un réglage que le thème ne déclare pas.
+ *
+ * L'attribut relie une région d'un gabarit aux réglages qui la façonnent : l'aperçu du panel y pose
+ * un bouton « Modifier » qui ouvre ces champs, et l'entrée dans une section y fait défiler la page.
+ * Un nom inconnu ne casse rien — la zone reste simplement muette au clic —, c'est pourquoi c'est un
+ * avis : une faute de frappe, ou un réglage renommé sans reprendre ses annotations.
+ *
+ * Seul le balisage réellement émis compte : le contenu d'un bloc `{% comment %}` ou `{% raw %}` et
+ * d'un commentaire HTML n'atteint jamais le DOM. Une valeur calculée (`{{ … }}`) ne se juge pas
+ * sans rendu, elle est laissée de côté.
+ */
+function checkThemeSettingAnnotations(entry: DiscoveredExtension): Finding[] {
+  const theme = entry.manifest?.theme;
+  if (!theme) {
+    return [];
+  }
+  const declared = new Set((theme.settings ?? []).map((field) => field.name));
+  const findings: Finding[] = [];
+  for (const { path, source } of themeTemplateSources(entry.path, theme.templates ?? "templates")) {
+    const emitted = emittedMarkup(source);
+    for (const match of emitted.matchAll(/data-theme-setting\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+      const value = match[1] ?? match[2] ?? "";
+      if (value.includes("{{") || value.includes("{%")) {
+        continue;
+      }
+      const line = emitted.slice(0, match.index ?? 0).split("\n").length;
+      for (const name of value.split(/\s+/).filter((part) => part !== "")) {
+        if (!declared.has(name)) {
+          findings.push({
+            level: "warn",
+            message:
+              `${path} (ligne ${line}) : data-theme-setting nomme « ${name} », qui n'est pas un ` +
+              `réglage déclaré — le bouton « Modifier » de l'aperçu n'ouvrira aucun champ pour lui`,
+          });
+        }
+      }
+    }
+  }
+  return findings;
+}
+
+/**
+ * Traductions du thème : les clés qu'un gabarit lit sous `t` doivent exister.
+ *
+ * Une clé absente ne casse rien — le gabarit rend du vide — et c'est précisément le problème :
+ * un bouton sans libellé se remarque à l'usage, pas à la relecture. Le contrôle porte aussi sur
+ * l'écart entre langues, parce qu'une traduction oubliée retombe silencieusement sur celle de
+ * l'instance : la page reste lisible, mais panachée.
+ *
+ * L'avis inverse — une clé que plus personne ne lit — est rendu muet dès qu'un gabarit indexe `t`
+ * par variable : voir `indexed` ci-dessous.
+ */
+function checkThemeTranslations(entry: DiscoveredExtension): Finding[] {
+  const theme = entry.manifest?.theme;
+  if (!theme || !entry.path) {
+    return [];
+  }
+  const findings: Finding[] = [];
+  const dir = join(entry.path, theme.locales ?? "locales");
+
+  const used = new Set<string>();
+  /**
+   * Un gabarit lit-il `t` par variable (`t[key]`) plutôt que par nom ?
+   *
+   * C'est le motif qui traduit un code venu du noyau — `status` d'un service, `kind` d'une demande
+   * de droits : le gabarit compose la clé (`"status" | append: service.status`) et l'indexe. Les
+   * clés correspondantes sont bien lues, mais aucune ne s'écrit `t.quelqueChose`, si bien que la
+   * lecture statique ci-dessus les croit mortes. Dès qu'un seul gabarit indexe `t`, on ne peut
+   * plus prouver qu'une clé ne sert pas — et un avis qu'on sait faux apprend à ignorer les avis.
+   */
+  let indexed = false;
+  const templates = themeTemplateSources(entry.path, theme.templates ?? "templates");
+  for (const { source } of templates) {
+    // Même lecture que le panel, qui range chaque texte du thème sous les gabarits qui le lisent.
+    const reads = themeTranslationReads(source);
+    for (const key of reads.keys) {
+      used.add(key);
+    }
+    indexed ||= reads.indexed;
+  }
+
+  if (!existsSync(dir)) {
+    if (used.size > 0) {
+      findings.push({
+        level: "error",
+        message: `gabarits : ${used.size} libellé(s) lus sous "t" mais aucun dossier de traductions (${theme.locales ?? "locales"}/)`,
+      });
+    }
+    return findings;
+  }
+
+  const tables = new Map<string, Record<string, string>>();
+  // Les seuls `*.json` du dossier lui-même : le sous-dossier `panel/` (traductions des réglages,
+  // voir `checkThemePanelTranslations`) n'est pas une langue des gabarits, et le moteur de rendu ne
+  // le lit pas non plus — il n'ouvre que `<locales>/<langue>.json`.
+  for (const file of readdirSync(dir, { withFileTypes: true })
+    .filter((item) => item.isFile() && item.name.endsWith(".json"))
+    .map((item) => item.name)) {
+    const locale = file.replace(/\.json$/, "");
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(join(dir, file), "utf8"));
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        findings.push({ level: "error", message: `${file} : un objet de clés est attendu` });
+        continue;
+      }
+      const entries = Object.entries(parsed as Record<string, unknown>);
+      const wrong = entries.filter(([, value]) => typeof value !== "string").map(([key]) => key);
+      if (wrong.length > 0) {
+        findings.push({
+          level: "error",
+          message: `${file} : valeur non textuelle pour ${wrong.join(", ")} — le noyau les ignore`,
+        });
+      }
+      tables.set(locale, Object.fromEntries(entries.filter((e): e is [string, string] => typeof e[1] === "string")));
+    } catch (error) {
+      findings.push({
+        level: "error",
+        message: `${file} : JSON illisible (${error instanceof Error ? error.message : String(error)})`,
+      });
+    }
+  }
+
+  const known = new Set([...tables.values()].flatMap((table) => Object.keys(table)));
+  const missing = [...used].filter((key) => !known.has(key)).sort();
+  if (missing.length > 0) {
+    findings.push({
+      level: "error",
+      message: `gabarits : libellé(s) lus sous "t" mais absents de toutes les traductions — ${missing.join(", ")}`,
+    });
+  }
+  // Les textes nommés hors d'une lecture `t.<clé>` — une zone `data-theme-text`, une section qui
+  // les range (`settingGroups[].texts`) — doivent exister aussi : sinon l'aperçu du panel mène à
+  // une entrée qui n'existe pas, ou la section annonce un texte qu'on ne peut pas modifier.
+  const textAnnotations = templates.flatMap(({ path, source }) =>
+    annotatedTextKeys(source).map((annotation) => ({ path, ...annotation })),
+  );
+  for (const { path, line, key } of textAnnotations) {
+    if (!known.has(key)) {
+      findings.push({
+        level: "warn",
+        message:
+          `${path} (ligne ${line}) : data-theme-text nomme « ${key} », absente des traductions — ` +
+          `l'aperçu du panel ne mènera à aucun texte pour cette zone`,
+      });
+    }
+  }
+  for (const group of theme.settingGroups ?? []) {
+    const unknown = (group.texts ?? []).filter((key) => !known.has(key));
+    if (unknown.length > 0) {
+      findings.push({
+        level: "warn",
+        message:
+          `section « ${group.name} » : « texts » cite ${unknown.join(", ")}, absente(s) des ` +
+          `traductions — le panel n'aurait aucun texte à y montrer`,
+      });
+    }
+  }
+  const unused = indexed ? [] : [...known].filter((key) => !used.has(key)).sort();
+  if (unused.length > 0) {
+    findings.push({
+      level: "warn",
+      message: `traductions : clé(s) qu'aucun gabarit ne lit — ${unused.slice(0, 10).join(", ")}${unused.length > 10 ? "…" : ""}`,
+    });
+  }
+  for (const [locale, table] of tables) {
+    const gaps = [...known].filter((key) => !(key in table)).sort();
+    if (gaps.length > 0) {
+      findings.push({
+        level: "warn",
+        message: `${locale}.json : ${gaps.length} clé(s) non traduite(s) — la langue de l'instance s'affichera à la place (${gaps.slice(0, 6).join(", ")}${gaps.length > 6 ? "…" : ""})`,
+      });
     }
   }
   return findings;
@@ -279,6 +718,16 @@ function checkThemeTemplates(entry: DiscoveredExtension): Finding[] {
           `Utiliser {% comment %}…{% endcomment %}`,
       });
     }
+    for (const target of found.missingPartials) {
+      findings.push({
+        level: "error",
+        message:
+          `${found.templatePath} : {% render "${target}" %} ne désigne aucun fichier du thème — ` +
+          `le chemin part de la racine du thème, pas du gabarit (« templates/partials/x », pas ` +
+          `« partials/x »). Le gabarit entier échouera au rendu et la page retombera en silence ` +
+          `sur l'écran d'origine du portail`,
+      });
+    }
     if (!found.view && found.templatePath.includes("/pages/")) {
       findings.push({
         level: "warn",
@@ -300,6 +749,99 @@ function checkThemeTemplates(entry: DiscoveredExtension): Finding[] {
     findings.push({ level: "error", message: problem });
   }
 
+  // Les réglages sont ce que l'hébergeur verra dans la page de configuration du thème : un nom
+  // invalide donne un champ qu'aucun gabarit ne peut lire, un doublon une valeur perdue en
+  // silence, un `select` sans option une liste vide. Trois défauts qui ne se voient qu'en ouvrant
+  // cette page, c'est-à-dire trop tard.
+  for (const problem of invalidThemeSettings(theme.settings, theme)) {
+    findings.push({ level: "error", message: problem });
+  }
+  for (const advice of themeSettingWarnings(theme)) {
+    findings.push({ level: "warn", message: advice });
+  }
+
+  return findings;
+}
+
+/** Nombre de chaînes citées par un avis avant « … » : le détail complet encombrerait la console. */
+const PANEL_SAMPLE = 6;
+
+/**
+ * Traductions des textes du manifeste pour le panel : `<locales>/panel/<langue>.json`.
+ *
+ * Une par langue de `SUPPORTED_LOCALES` autre que celle du manifeste (`settingsLocale`, défaut
+ * `en`). Tout est avis et rien n'est erreur : une traduction absente retombe sur la chaîne source,
+ * le panel reste utilisable — dans une autre langue que celle du staff. Seul un fichier illisible
+ * est une erreur, parce qu'il annule en silence toutes les traductions qu'il contient.
+ *
+ * La clé est la chaîne source exacte (façon gettext) : un libellé retouché dans le manifeste rend
+ * sa traduction orpheline, d'où l'avis sur les clés que plus aucune chaîne ne porte.
+ */
+function checkThemePanelTranslations(entry: DiscoveredExtension): Finding[] {
+  const theme = entry.manifest?.theme;
+  if (!theme || !entry.path) {
+    return [];
+  }
+  const sources = themePanelStrings(theme);
+  if (sources.length === 0) {
+    return [];
+  }
+  const settingsLocale = theme.settingsLocale ?? "en";
+  const panelDir = `${theme.locales ?? "locales"}/panel`;
+  const findings: Finding[] = [];
+  const sample = (items: string[]) =>
+    `${items
+      .slice(0, PANEL_SAMPLE)
+      .map((item) => `« ${item} »`)
+      .join(", ")}${items.length > PANEL_SAMPLE ? "…" : ""}`;
+
+  for (const locale of SUPPORTED_LOCALES) {
+    if (locale === settingsLocale) {
+      continue;
+    }
+    const file = `${panelDir}/${locale}.json`;
+    const full = join(entry.path, file);
+    if (!existsSync(full)) {
+      findings.push({
+        level: "warn",
+        message: `${file} absent — le panel affichera les ${sources.length} textes des réglages en « ${settingsLocale} » à un membre du staff en « ${locale} »`,
+      });
+      continue;
+    }
+    let table: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(full, "utf8"));
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        findings.push({ level: "error", message: `${file} : un objet { "chaîne source": "traduction" } est attendu` });
+        continue;
+      }
+      table = parsed as Record<string, unknown>;
+    } catch (error) {
+      findings.push({
+        level: "error",
+        message: `${file} : JSON illisible (${error instanceof Error ? error.message : String(error)})`,
+      });
+      continue;
+    }
+    const untranslated = sources.filter((source) => {
+      const value = table[source];
+      return typeof value !== "string" || value.trim() === "";
+    });
+    if (untranslated.length > 0) {
+      findings.push({
+        level: "warn",
+        message: `${file} : ${untranslated.length} texte(s) sans traduction, affiché(s) tel(s) quel(s) — ${sample(untranslated)}`,
+      });
+    }
+    const known = new Set(sources);
+    const orphans = Object.keys(table).filter((key) => !known.has(key));
+    if (orphans.length > 0) {
+      findings.push({
+        level: "warn",
+        message: `${file} : ${orphans.length} clé(s) qui ne correspondent à aucun texte du manifeste (libellé retouché ?) — ${sample(orphans)}`,
+      });
+    }
+  }
   return findings;
 }
 
@@ -322,7 +864,13 @@ function inspect(entry: DiscoveredExtension): Finding[] {
   const findings: Finding[] = [
     ...checkIdentity(entry),
     ...checkThemeAssets(entry),
+    ...checkThemeTokenKeys(entry),
     ...checkThemeTemplates(entry),
+    ...checkThemeRawFilters(entry),
+    ...checkThemeMarkdownPlacement(entry),
+    ...checkThemeSettingAnnotations(entry),
+    ...checkThemeTranslations(entry),
+    ...checkThemePanelTranslations(entry),
   ];
 
   const descriptor = entry.descriptor as (ExtensionDescriptor & Record<string, unknown>) | undefined;

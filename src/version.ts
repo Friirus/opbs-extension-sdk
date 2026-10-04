@@ -23,7 +23,7 @@
  * jalons franchis, et `public-surface.spec.ts` échoue désormais si la surface change sans que
  * cette ligne suive.
  */
-export const HOST_CONTRACT_VERSION = "0.32.0";
+export const HOST_CONTRACT_VERSION = "0.35.0";
 
 /**
  * Plus ancienne version du contrat encore compatible avec ce noyau.
@@ -36,6 +36,11 @@ export const HOST_CONTRACT_VERSION = "0.32.0";
  *
  * Ne monte que sur une rupture non additive du contrat (signature changée, champ devenu
  * obligatoire, genre retiré) — jamais sur un simple ajout. Vaut `0.16.0` : dernière rupture non
- * additive à ce jour (voir `CHANGELOG.md`).
+ * additive à ce jour (voir `CHANGELOG.md`). La 0.33.0 est additive : les réglages de thème liés au
+ * CSS, les listes, les textes localisés, le mode sombre et les dictionnaires n'ôtent rien à ce
+ * qu'un module pouvait déjà lire. La 0.34.0 l'est aussi, à une exception annoncée : des îlots
+ * deviennent obligatoires, ce qui fait échouer `check-extension` sur un thème qui ne les pose pas,
+ * sans l'empêcher de se charger — le moteur ne vérifie pas les îlots au chargement. La 0.35.0 est
+ * purement additive : deux champs de plus sur `ThemeKbArticle`, que les gabarits existants ignorent.
  */
 export const HOST_CONTRACT_COMPATIBLE_SINCE = "0.16.0";

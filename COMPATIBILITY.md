@@ -345,6 +345,152 @@ d'îlot invalide est refusé à la saisie côté panel, et n'aurait de toute fa�
 `missingRequiredIslands` n'est pas assoupli — un nom calculé ne prouve pas qu'un îlot obligatoire
 est en place.
 
+### Les articles de la base de connaissances sont du Markdown (0.35.0)
+
+Additif : un thème écrit contre `0.34.0` se charge et se rend comme avant. Le corps d'un article
+cesse d'être du texte brut — le panel propose désormais des titres, des listes, des citations, du
+code et des images — et le contrat de la vue `kb-article` suit.
+
+- **`ThemeKbArticle.bodyHtml`** : le corps rendu en HTML par le noyau, à placer avec
+  `{{ article.bodyHtml }}`. Les éléments qui peuvent en sortir forment une liste fermée (voir
+  `EXTENSIONS.md`) et aucune balise saisie n'y entre jamais. Le noyau ne le style pas.
+- **`ThemeKbArticle.metaDescription`** : la description saisie, sinon un extrait du corps.
+- **Une exception de plus à « le moteur échappe tout »**, la troisième après `bodyHtml` d'un e-mail
+  et le filtre `markdown` (la liste de la section 0.34.0 ci-dessous date d'avant). Elle ne se
+  fabrique pas depuis un thème ni depuis un contexte posté : le marqueur est posé par le noyau, côté
+  rendu, sur le seul contexte qu'il assemble lui-même.
+- **`ThemeKbArticle.body` change de nature, pas de type.** C'est le texte source, toujours échappé.
+  Un thème qui l'affichait telle quelle voit apparaître le balisage (`## Titre`, `**gras**`) des
+  articles qui en utilisent, et ne profite pas de la mise en forme tant qu'il n'est pas passé à
+  `bodyHtml`. C'est le seul effet visible pour un thème qui n'a rien changé.
+
+Un thème déclare `^0.35.0` dès qu'il lit l'un des deux champs. `theme-argile` et le thème livré
+Encre rendent `bodyHtml`.
+
+### Personnalisation de thème poussée (0.34.0)
+
+Levée nommée du moratoire du 2026-08-28 pour la surface « thèmes » du contrat (voir `ROADMAP.md`).
+Le détail, tranche par tranche, est dans `packages/extension-sdk/CHANGELOG.md` ; cette section dit
+ce qu'un auteur doit en retenir pour la compatibilité.
+
+**Ce qui est additif.** Un thème écrit contre `0.33.0` qui n'utilise aucun ajout se charge et se
+rend comme avant — sous réserve des changements de la liste suivante. Il déclare `^0.34.0` dès qu'il
+utilise un ajout, pour qu'un noyau plus ancien le refuse au lieu d'ignorer ses clés en silence.
+
+- Réglages : `ThemeDefinition.settingGroups` (`ThemeSettingGroup`, avec `texts`),
+  `ThemeDefinition.settingsLocale`, `ConfigField.subgroup`, `block` et `format: "markdown"`,
+  `ConfigFieldType` `link` et `font` (réservés aux thèmes), conditions `notEquals` et `in`,
+  `visibleWhen` en tableau. Fonctions pures `conditionHolds`, `isConfigFieldVisible`,
+  `configFieldConditions`, `themePanelStrings`, `themeSettingWarnings` ; second paramètre
+  facultatif d'`invalidThemeSettings`.
+- Aperçu : `THEME_ACCOUNT_PREVIEW_PATHS`, `isThemePreviewPath`, trois documents légaux de plus dans
+  `THEME_PREVIEW_PATHS`, `theme-preview` dans `RESERVED_PAGE_SLUGS`, conventions
+  `data-theme-setting` et `data-theme-text`.
+- Textes et texte riche : `THEME_RESERVED_SETTING_KEYS`, `THEME_TEXT_KEY_PATTERN`,
+  `THEME_TEXT_MAX_LENGTH`, `themeTranslationReads`, `parseThemeMarkdown`,
+  `THEME_MARKDOWN_MAX_LENGTH`, filtre Liquid `markdown`, `isSafeLinkValue`.
+- Tokens : `typography.lineHeight`, `headingLineHeight`, `letterSpacing`, `headingLetterSpacing`,
+  `headingScale`, `colors.link`, `colors.focus`, `radii.button`, groupe `layout`, `elevation`, et
+  leurs types.
+- Polices : `isSafeThemeFont`, `themeFontFaces` (déplacé depuis `@opbs/ui`, qui le réexporte),
+  `uploadedFontFaces`, `isSafeUploadedFontFamily`, `isAllowedFontValue`, `ThemeUploadedFont`,
+  `ResolvedTheme.uploadedFonts`.
+- Contextes : `ThemeProductView.featured`, `ThemeShellContext.supportEmail?` et `statusPageUrl?`.
+- **Dépréciation** : `ConfigField.previewPath`, qui ne sert plus que de repli quand la section ne
+  déclare pas sa page. Le retirer aurait rompu l'additivité ; il le sera au plus tôt deux mineures
+  plus tard, selon la règle générale.
+
+**Ce qui ne l'est pas.** Quatre changements peuvent rendre faux un thème qui était juste :
+
+1. **Îlots obligatoires.** `service`, `account-security`, `ticket` et `dns-zone` exigent tous les
+   îlots qui sont le seul chemin vers une fonction (liste dans `EXTENSIONS.md`). `check-extension`
+   échoue sur un thème qui ne les pose pas ; le noyau, lui, le charge quand même, faute de vérifier
+   les îlots au chargement.
+2. **Token refusé au chargement.** `isSafeTokenValue` refuse désormais `@` et les fonctions qui
+   chargent une ressource ou exécutent du code (`url(`, `image(`, `image-set(`, `cross-fade(`,
+   `element(`, `src(`, `expression(`), sans égard à la casse. Dans `tokens` ou `tokensDark`, une
+   telle valeur fait refuser **le thème entier** au chargement ; dans une option ou un réglage lié
+   au CSS, elle est écartée. Même règle pour une `cssVar` de thème sous les préfixes `--shadow-` et
+   `--layout-`, devenus réservés au noyau.
+3. **`| raw`, `{% echo %}` et `{% cycle %}` sont échappés.** Un gabarit qui s'en servait pour écrire
+   du HTML affiche désormais le code. Seuls `bodyHtml` (gabarit d'e-mail) et la sortie du filtre
+   `markdown` arrivent en HTML.
+4. **`ConfigFieldCondition` devient une union** (`{ field, equals }` | `{ field, notEquals }` |
+   `{ field, in }`). Un code TypeScript qui lisait `visibleWhen.equals` sans rétrécir le type ne
+   compile plus. Aucun manifeste existant ne devient invalide.
+
+Et des comportements changent sans toucher à la forme du contrat : le pied de page d'un thème est
+rendu aussi dans l'espace client ; Paramètres › Identité ne porte plus ni couleur ni police, si
+bien que les réglages d'un thème liés à un token ne sont plus recouverts que par la marque d'un
+revendeur ; `headingWeight` est appliqué (défaut `700`), `headingFamily` suit `fontFamily` ; et
+les défauts de typographie changent le rendu du portail (hauteur de ligne `1.5`, titres en `1.2`,
+`-0.01em` et tailles dérivées de `baseSize × 1.25^n`), écart assumé à la règle « les défauts
+reproduisent le rendu actuel » puisqu'aucune instance n'est en service.
+
+**Pourquoi le plancher reste à `0.16.0`.** `HOST_CONTRACT_COMPATIBLE_SINCE` éteint tout module dont
+la plage est antérieure — tous genres confondus, pas seulement les thèmes. Aucun des quatre
+changements n'empêche un module correct de se charger : le premier ne concerne que
+`check-extension`, le quatrième que la compilation TypeScript, et les deux autres sont des
+durcissements de sécurité, assumés comme tels, qui ne visent qu'un thème dont une valeur ou un
+gabarit faisait déjà charger une ressource tierce ou écrire du HTML brut. Monter le plancher aurait
+éteint à la mise à jour des modules de paiement ou de provisionnement que rien de tout cela ne
+touche.
+
+### Réglages de thème liés à la feuille de style (0.33.0)
+
+Ajout pur : un thème écrit contre `0.32.0` reste juste et se charge toujours, le plancher
+`HOST_CONTRACT_COMPATIBLE_SINCE` n'ayant pas bougé. Il déclare `^0.33.0` s'il utilise ces ajouts,
+pour qu'un noyau plus ancien le refuse au lieu de les ignorer. (Cette section disait jusqu'au
+2026-09-24 « écrit contre `0.28.0` » et « doit déclarer `^0.33.0` pour se charger » : deux erreurs.
+La version précédente était `0.32.0` — la section suivante, datée à tort de `0.28.0`, avait induit
+la première — et le plancher existe depuis `0.30.0`.)
+
+- `ConfigFieldType` gagne `color`, `order` et `list`, tous trois réservés aux réglages de thème
+  (`check-extension` les refuse ailleurs). `ConfigField` gagne `localized`, `fields`, `maxItems`.
+- Le type des valeurs de réglage dans les contextes de gabarit s'élargit : un `list` arrive en
+  tableau d'objets. Un gabarit qui n'en déclare pas ne voit aucune différence.
+- `ConfigField` gagne `min`, `max`, `step`, `unit`, `visibleWhen`, `token` et `cssVar` ;
+  `ConfigFieldOption` gagne `sets` et `visibleWhen`. `token` et `cssVar` n'ont de sens que dans `theme.settings`.
+- `ResolvedTheme.cssVars` (optionnel) porte les variables posées par `cssVar` ; `themeToCss` les
+  émet avant celles du noyau.
+- **Aperçu dirigé** : `ConfigField.previewPath` et la liste `THEME_PREVIEW_PATHS` (avec
+  `ThemePreviewPath`), jusqu'ici recopiée à la main dans le portail et dans le panel.
+- **Traductions de thème** : `ThemeDefinition.locales` (dossier, défaut `locales`) et le type
+  `ThemeTranslations`. Les gabarits reçoivent `t` dans tous les contextes ; un thème sans dossier
+  de traductions ne change pas de comportement, `t` y est simplement vide.
+- **Mode sombre** : `ThemeDefinition.tokensDark`, `ConfigField.scheme`, `ResolvedTheme.tokensDark`
+  et `cssVarsDark`, et `ThemeColorScheme` gagne `"auto"`. `themeToCss` prend un troisième argument
+  (la palette sombre) et émet alors un bloc `@media`. Un thème sans `tokensDark` ne change pas de
+  comportement ; un appelant de `themeToCss` qui ignore le troisième argument non plus.
+- Nouveaux exports : `themeSettingStyle`, `isHexColor`, `CONFIG_FIELD_UNITS`,
+  `ConfigFieldCondition`, `ConfigFieldUnit`.
+- Ordre des couches de tokens en 0.33.0 : défauts du noyau, thème, **réglages du thème liés à un
+  token**, marque de l'hébergeur, marque du revendeur. Depuis 0.34.0, Paramètres › Identité ne
+  porte plus de marque : défauts du noyau, thème, réglages publiés du thème, marque d'un revendeur
+  (sur ses domaines et pour ses clients). Sur l'instance de l'hébergeur, le réglage du thème a le
+  dernier mot.
+
+### Réglages de thème : image, longueur maximale, capture d'écran (2026-09-17, consignés en 0.34.0)
+
+Ajout pur, livré le 2026-09-17 **sans que `HOST_CONTRACT_VERSION` monte** (il valait alors
+`0.32.0`) et consigné après coup dans l'entrée `0.34.0` du `CHANGELOG.md`. Cette section le datait
+à tort de `0.28.0`, qui est la version de `ExtensionStorage.setIfAbsent`. Un thème qui s'en sert
+déclare au moins `^0.33.0`, premier numéro du contrat qui les contient.
+
+- `ConfigFieldType` gagne `image`, **réservé aux réglages de thème** (`pnpm check-extension` le
+  refuse ailleurs).
+- `ConfigField` gagne `maxLength`.
+- `ThemeDefinition` gagne `screenshot`.
+- `isSafeSettingUrl` est exporté.
+
+**Un comportement change.** Une valeur de réglage `url` ou `image` qui n'est ni `https:`, ni
+`http:`, ni un chemin du site (`/…`, mais pas `//…`) n'arrive plus aux gabarits : le réglage prend
+son `defaultValue`, ou disparaît du contexte. Liquid échappe le HTML, pas le protocole — un
+`javascript:` écrit dans un `href` s'exécutait.
+
+`ThemeDefinition` et `ConfigField` sont désormais verrouillés par `public-surface.spec.ts`, comme
+`HostContext` et le manifeste.
+
 ### Un revendeur applique sa marque à ses clients (0.23.0)
 
 Ajout pur au registre des vues et des îlots : un thème écrit contre `0.22.0` reste juste, et rien
@@ -457,9 +603,10 @@ ici il en crée une, à une URL que le noyau ne connaît pas.
 
 **Ce qu'un thème ne peut pas prendre.** Tout slug de `RESERVED_PAGE_SLUGS`, et — plus important au
 quotidien — tout slug qu'une page créée au back-office occupe déjà : celle de l'hébergeur l'emporte,
-sans un mot, et son lien de nav est le seul écrit. C'est la même règle que les réglages de marque
-face aux tokens du thème, et l'ordre de la navigation la dit à voix haute : le noyau, puis ce que
-l'hébergeur a saisi, puis ce que le thème propose.
+sans un mot, et son lien de nav est le seul écrit. C'est la même règle que les réglages publiés
+d'un thème face à ses propres tokens — ce que l'hébergeur a saisi passe devant ce que le thème
+propose —, et l'ordre de la navigation la dit à voix haute : le noyau, puis ce que l'hébergeur a
+saisi, puis ce que le thème propose.
 
 Trois défauts de déclaration ne se voient jamais au rendu — slug réservé, doublon, gabarit
 manquant — et produisent tous un thème qui paraît complet. `pnpm check-extension` les refuse avant

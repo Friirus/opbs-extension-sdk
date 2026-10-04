@@ -398,8 +398,27 @@ const THEME_HEADER = `{% comment %}
 </header>
 `;
 
-const THEME_FOOTER = `<footer>
+// Le pied généré porte ce que le portail retire du sien dès qu'un thème en fournit un : il ne
+// rendait que la raison sociale, et un thème tiré du générateur rendait les documents légaux
+// introuvables et le consentement aux traceurs irrévocable. Même forme que Classique, Encre,
+// Argile et Kiosque.
+const THEME_FOOTER = `{% comment %}
+  Pied minimal. Deux éléments n'y sont pas décoratifs : dès qu'un thème fournit ce gabarit, le
+  portail peut retirer son propre pied de page, et avec lui les liens vers les documents légaux
+  publiés et le bouton qui permet de revenir sur son consentement aux traceurs. \`legalLinks\` ne
+  contient que les documents réellement publiés (vide sur une instance qui n'a rien rédigé) ; l'îlot
+  \`cookie-preferences\` monte le bouton du noyau. Les retirer rend ces documents introuvables.
+{% endcomment %}
+<footer>
   <p>{{ companyName | default: "Espace client" }}</p>
+  {% if legalLinks.size > 0 %}
+  <nav>
+    {% for link in legalLinks %}
+    <a href="{{ link.href }}">{{ link.label }}</a>
+    {% endfor %}
+    <span data-island="cookie-preferences"></span>
+  </nav>
+  {% endif %}
 </footer>
 `;
 

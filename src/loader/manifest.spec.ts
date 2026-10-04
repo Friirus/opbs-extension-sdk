@@ -1,3 +1,4 @@
+import { invalidThemeSettings } from "../kinds/theme";
 import { parseManifest } from "./manifest";
 
 function themeManifest(theme: unknown) {
@@ -123,6 +124,39 @@ describe("parseManifest — section theme", () => {
   });
 
   /**
+   * Le groupe `layout` et le niveau `elevation` (tranche D) : un groupe absent de `TOKEN_GROUPS`
+   * était ignoré à la lecture, et le thème qui le déclare n'en voyait aucun effet. Les listes
+   * fermées viennent d'`ENUM_TOKENS`, pas d'une copie locale.
+   */
+  it("lit le groupe layout et le relief, et contrôle leurs listes fermées", () => {
+    const manifest = parseManifest(
+      themeManifest({
+        tokens: {
+          elevation: "raised",
+          layout: { containerMax: "80rem", accountNav: "top" },
+          typography: { lineHeight: "1.6", headingScale: "1.333" },
+          colors: { link: "#0055aa" },
+          radii: { button: "999px" },
+        },
+      }),
+      "extension.json",
+    );
+
+    expect(manifest.theme?.tokens?.elevation).toBe("raised");
+    expect(manifest.theme?.tokens?.layout).toEqual({ containerMax: "80rem", accountNav: "top" });
+    expect(manifest.theme?.tokens?.typography).toEqual({ lineHeight: "1.6", headingScale: "1.333" });
+    expect(() =>
+      parseManifest(themeManifest({ tokens: { elevation: "relief" } }), "extension.json"),
+    ).toThrow(/theme\.tokens\.elevation/);
+    expect(() =>
+      parseManifest(themeManifest({ tokens: { layout: { accountNav: "left" } } }), "extension.json"),
+    ).toThrow(/theme\.tokens\.layout\.accountNav.*"sidebar" ou "top"/s);
+    expect(() =>
+      parseManifest(themeManifest({ tokensDark: { density: "dense" } }), "extension.json"),
+    ).toThrow(/theme\.tokensDark\.density/);
+  });
+
+  /**
    * `theme.pages` a failli naître muet, comme `templates` avant lui : cette fonction ne recopie que
    * les champs qu'elle nomme, donc un champ ajouté au contrat et oublié ici disparaît sans un mot —
    * le manifeste est accepté, le thème se charge, et sa page n'existe simplement pas. Ces tests
@@ -194,6 +228,84 @@ describe("parseManifest — section theme", () => {
     });
   });
 
+  it("lit la capture d'écran et refuse qu'elle sorte du dossier du thème", () => {
+    const manifest = parseManifest(themeManifest({ screenshot: "screenshot.png" }), "extension.json");
+    expect(manifest.theme?.screenshot).toBe("screenshot.png");
+
+    expect(() =>
+      parseManifest(themeManifest({ screenshot: "../../secret.png" }), "extension.json"),
+    ).toThrow(/theme\.screenshot/);
+  });
+
+  /**
+   * `parseSettings` recopie clé par clé : une clé oubliée ne lève rien, le réglage perd seulement
+   * sa liaison et le thème « ne réagit pas ». D'où un test qui nomme chacune des clés de 0.29.0.
+   */
+  it("lit les clés de 0.29.0 sans en perdre une", () => {
+    const manifest = parseManifest(
+      themeManifest({
+        settings: [
+          { name: "primaire", label: "Couleur", type: "color", token: "colors.primary" },
+          { name: "teinte", label: "Teinte", type: "color", cssVar: "--tt-tint" },
+          { name: "primaireNuit", label: "Couleur (nuit)", type: "color", token: "colors.primary", scheme: "dark" },
+          { name: "rayon", label: "Rayon", type: "number", min: 0, max: 32, step: 2, unit: "px" },
+          {
+            name: "blocs",
+            label: "Ordre",
+            type: "order",
+            options: [
+              { value: "a", label: "A", visibleWhen: { field: "rayon", equals: "8" } },
+              { value: "b", label: "B" },
+            ],
+          },
+          {
+            name: "avis",
+            label: "Avis",
+            type: "list",
+            maxItems: 6,
+            fields: [{ name: "texte", label: "Texte", type: "textarea", localized: true }],
+          },
+          {
+            name: "palette",
+            label: "Palette",
+            type: "select",
+            visibleWhen: { field: "rayon", equals: "8" },
+            options: [{ value: "nuit", label: "Nuit", sets: { primaire: "#111111" } }],
+          },
+        ],
+      }),
+      "extension.json",
+    );
+
+    const [primaire, teinte, primaireNuit, rayon, blocs, avis, palette] = manifest.theme?.settings ?? [];
+    // Une clé oubliée ici ne lève rien : le réglage perd sa palette et repeint la mauvaise.
+    expect(primaireNuit?.scheme).toBe("dark");
+    expect(avis).toMatchObject({ type: "list", maxItems: 6 });
+    expect(avis?.fields?.[0]).toMatchObject({ name: "texte", type: "textarea", localized: true });
+    expect(primaire).toMatchObject({ type: "color", token: "colors.primary" });
+    expect(teinte?.cssVar).toBe("--tt-tint");
+    expect(rayon).toMatchObject({ min: 0, max: 32, step: 2, unit: "px" });
+    expect(blocs?.type).toBe("order");
+    expect(blocs?.options?.[0]?.visibleWhen).toEqual({ field: "rayon", equals: "8" });
+    expect(palette?.visibleWhen).toEqual({ field: "rayon", equals: "8" });
+    expect(palette?.options?.[0]?.sets).toEqual({ primaire: "#111111" });
+  });
+
+  it("lit un réglage image et sa longueur maximale", () => {
+    const manifest = parseManifest(
+      themeManifest({
+        settings: [
+          { name: "visuel", label: "Visuel", type: "image" },
+          { name: "titre", label: "Titre", type: "text", maxLength: 80 },
+        ],
+      }),
+      "extension.json",
+    );
+
+    expect(manifest.theme?.settings?.[0]?.type).toBe("image");
+    expect(manifest.theme?.settings?.[1]?.maxLength).toBe(80);
+  });
+
   it("laisse passer un manifeste de thème sans section theme", () => {
     const manifest = parseManifest(
       {
@@ -207,5 +319,167 @@ describe("parseManifest — section theme", () => {
     );
 
     expect(manifest.theme).toBeUndefined();
+  });
+});
+
+describe("parseManifest — contrat 0.34.0 des réglages", () => {
+  it("lit les trois opérateurs de condition et les tableaux, sur un champ comme sur une option", () => {
+    const manifest = parseManifest(
+      themeManifest({
+        settings: [
+          { name: "mode", label: "Mode", type: "select", options: [{ value: "a", label: "A" }] },
+          { name: "egal", label: "Égal", type: "text", visibleWhen: { field: "mode", equals: true } },
+          { name: "diff", label: "Différent", type: "text", visibleWhen: { field: "mode", notEquals: "a" } },
+          { name: "parmi", label: "Parmi", type: "text", visibleWhen: { field: "mode", in: ["a", "b"] } },
+          {
+            name: "tous",
+            label: "Tous",
+            type: "text",
+            visibleWhen: [{ field: "mode", equals: "a" }, { field: "diff", notEquals: "" }],
+          },
+          {
+            name: "blocs",
+            label: "Blocs",
+            type: "order",
+            options: [
+              { value: "x", label: "X", visibleWhen: [{ field: "mode", in: ["a"] }] },
+              { value: "y", label: "Y" },
+            ],
+          },
+        ],
+      }),
+      "extension.json",
+    );
+
+    const [, egal, diff, parmi, tous, blocs] = manifest.theme?.settings ?? [];
+    // Un booléen du JSON devient sa forme texte : le panel compare des chaînes.
+    expect(egal?.visibleWhen).toEqual({ field: "mode", equals: "true" });
+    expect(diff?.visibleWhen).toEqual({ field: "mode", notEquals: "a" });
+    expect(parmi?.visibleWhen).toEqual({ field: "mode", in: ["a", "b"] });
+    expect(tous?.visibleWhen).toEqual([
+      { field: "mode", equals: "a" },
+      { field: "diff", notEquals: "" },
+    ]);
+    expect(blocs?.options?.[0]?.visibleWhen).toEqual([{ field: "mode", in: ["a"] }]);
+  });
+
+  /**
+   * Avant 0.34.0, une forme inconnue disparaissait sans un mot et le champ restait toujours
+   * visible. Elle est toujours écartée — le thème se charge —, mais `invalidThemeSettings` la
+   * restitue : c'est ce que lit `check-extension`.
+   */
+  it("écarte une condition mal formée sans refuser le thème, et la fait signaler", () => {
+    const manifest = parseManifest(
+      themeManifest({
+        settings: [
+          { name: "mode", label: "Mode", type: "text" },
+          { name: "typo", label: "Typo", type: "text", visibleWhen: { field: "mode", notEqual: "a" } },
+          { name: "deux", label: "Deux", type: "text", visibleWhen: { field: "mode", equals: "a", in: ["b"] } },
+          {
+            name: "mixte",
+            label: "Mixte",
+            type: "text",
+            visibleWhen: [{ field: "mode", equals: "a" }, { field: "mode", in: "a" }],
+          },
+          {
+            name: "blocs",
+            label: "Blocs",
+            type: "order",
+            options: [
+              { value: "x", label: "X", visibleWhen: { equals: "a" } },
+              { value: "y", label: "Y" },
+            ],
+          },
+        ],
+      }),
+      "extension.json",
+    );
+
+    const [, typo, deux, mixte, blocs] = manifest.theme?.settings ?? [];
+    expect(typo?.visibleWhen).toBeUndefined();
+    expect(deux?.visibleWhen).toBeUndefined();
+    // Le reste d'un tableau survit : seule la condition fautive est écartée.
+    expect(mixte?.visibleWhen).toEqual([{ field: "mode", equals: "a" }]);
+    expect(blocs?.options?.[0]?.visibleWhen).toBeUndefined();
+
+    const problems = invalidThemeSettings(manifest.theme?.settings).join("\n");
+    expect(problems).toContain("réglage « typo » : condition « visibleWhen » ignorée — aucun opérateur");
+    expect(problems).toContain("réglage « deux » : condition « visibleWhen » ignorée — un seul opérateur");
+    expect(problems).toContain("réglage « mixte » : condition « visibleWhen » ignorée — « in » attend un tableau");
+    expect(problems).toContain(
+      "réglage « blocs », option « x » : condition « visibleWhen » ignorée — « field » manquant",
+    );
+  });
+
+  it("lit subgroup, block, settingGroups et settingsLocale", () => {
+    const manifest = parseManifest(
+      themeManifest({
+        settingsLocale: "fr",
+        settingGroups: [
+          { name: "Accueil", description: " Le haut de la page. ", category: "content", previewPath: "/" },
+          { name: "Couleurs", category: "appearance" },
+        ],
+        settings: [
+          { name: "nuit", label: "Nuit", type: "color", group: "Couleurs", subgroup: " Mode sombre " },
+          {
+            name: "ordre",
+            label: "Ordre",
+            type: "order",
+            group: "Accueil",
+            options: [
+              { value: "hero", label: "Hero" },
+              { value: "steps", label: "Étapes" },
+            ],
+          },
+          { name: "titreEtapes", label: "Titre", type: "text", group: "Accueil", block: "steps" },
+        ],
+      }),
+      "extension.json",
+    );
+
+    const theme = manifest.theme;
+    expect(theme?.settingsLocale).toBe("fr");
+    expect(theme?.settingGroups).toEqual([
+      { name: "Accueil", description: "Le haut de la page.", category: "content", previewPath: "/" },
+      { name: "Couleurs", category: "appearance" },
+    ]);
+    expect(theme?.settings?.[0]?.subgroup).toBe("Mode sombre");
+    expect(theme?.settings?.[2]?.block).toBe("steps");
+    expect(invalidThemeSettings(theme?.settings, theme)).toEqual([]);
+  });
+
+  it("lit le type link, format et les textes d'une section", () => {
+    const manifest = parseManifest(
+      themeManifest({
+        settingGroups: [{ name: "Accueil", texts: ["heroTitle", 3, "heroLead"] }],
+        settings: [
+          { name: "cta", label: "Bouton", type: "link", group: "Accueil", defaultValue: "/catalog" },
+          { name: "corps", label: "Corps", type: "textarea", group: "Accueil", format: "markdown" },
+          {
+            name: "liens",
+            label: "Liens",
+            type: "list",
+            group: "Accueil",
+            fields: [{ name: "href", label: "Lien", type: "link" }],
+          },
+        ],
+      }),
+      "extension.json",
+    );
+    const theme = manifest.theme;
+    expect(theme?.settingGroups).toEqual([{ name: "Accueil", texts: ["heroTitle", "heroLead"] }]);
+    expect(theme?.settings?.[0]?.type).toBe("link");
+    expect(theme?.settings?.[1]?.format).toBe("markdown");
+    expect(theme?.settings?.[2]?.fields?.[0]?.type).toBe("link");
+    expect(invalidThemeSettings(theme?.settings, theme)).toEqual([]);
+  });
+
+  it("refuse une section sans nom, ou une liste de sections qui n'est pas un tableau", () => {
+    expect(() =>
+      parseManifest(themeManifest({ settingGroups: [{ description: "x" }] }), "extension.json"),
+    ).toThrow(/settingGroups\[0\]\.name/);
+    expect(() =>
+      parseManifest(themeManifest({ settingGroups: "Accueil" }), "extension.json"),
+    ).toThrow(/settingGroups" doit être un tableau/);
   });
 });

@@ -125,7 +125,6 @@ type Assert<T extends true> = T;
  * `CoreEventPayloads` (ou l'inverse) fait échouer la compilation ici plutôt qu'au premier module
  * qui essaie de le typer. Jamais lu, jamais exporté — sa seule fonction est d'exister.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _Exhaustive = Assert<
   [
     Exclude<CoreEvent, keyof CoreEventPayloads>,

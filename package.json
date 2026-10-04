@@ -1,6 +1,6 @@
 {
   "name": "@opbs/extension-sdk",
-  "version": "0.32.0",
+  "version": "0.35.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -31,15 +31,18 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "lint": "eslint ."
   },
   "dependencies": {
     "semver": "^7.8.5"
   },
   "devDependencies": {
+    "@opbs/config": "workspace:*",
     "@types/jest": "^30.0.0",
     "@types/node": "^26.4.1",
     "@types/semver": "^7.8.0",
+    "eslint": "^10.9.1",
     "jest": "^30.5.1",
     "ts-jest": "^29.4.12",
     "typescript": "^6.0.3"
