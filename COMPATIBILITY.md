@@ -345,6 +345,30 @@ d'îlot invalide est refusé à la saisie côté panel, et n'aurait de toute fa�
 `missingRequiredIslands` n'est pas assoupli — un nom calculé ne prouve pas qu'un îlot obligatoire
 est en place.
 
+### Un remboursement ou un litige clos chez la passerelle atteint le noyau (0.36.0)
+
+Additif : un module `payment` écrit contre un contrat antérieur se charge et se comporte comme
+avant. `GatewayEvent`, ce que rend `verifyWebhook`, gagne deux variantes.
+
+- **`payment.refunded`** : un remboursement fait depuis le tableau de bord du prestataire, hors de
+  tout appel à `refund()`. `gatewayRef` désigne l'encaissement d'origine, `refundRef` le
+  remboursement lui-même. `refundRef` est la clé d'idempotence : un webhook rejoué, ou deux
+  événements pour le même remboursement, n'enregistrent qu'une ligne.
+- **`payment.dispute.closed`** : un `payment.disputed` antérieur se referme, `won` (la facture
+  redevient `PAID`) ou `lost` (elle reste `DISPUTED`, à traiter par le staff).
+
+Un module qui n'émet ni l'un ni l'autre n'a rien à changer. Un module qui les émet déclare
+`^0.36.0`, pour qu'un noyau plus ancien le refuse au lieu d'ignorer ses événements. `stripe` et
+`paypal`, livrés avec le noyau, les émettent déjà.
+
+**Conséquence pour un hébergeur déjà en service, que le contrat ne peut pas porter.** Le noyau ne
+choisit pas les événements qu'un prestataire lui envoie : c'est l'hébergeur qui les a cochés à la
+création de son endpoint. Un endpoint Stripe créé avec une sélection n'a ni `refund.created`, ni
+`refund.updated`, ni `charge.dispute.closed` ; un webhook PayPal n'a ni `PAYMENT.CAPTURE.REFUNDED`
+ni `CUSTOMER.DISPUTE.RESOLVED`. Tant qu'il ne les a pas ajoutés chez le prestataire, il n'y a pas de
+régression, mais pas non plus de bénéfice. La liste complète est dans l'aide du champ de
+configuration de chaque module et dans le guide de déploiement.
+
 ### Les articles de la base de connaissances sont du Markdown (0.35.0)
 
 Additif : un thème écrit contre `0.34.0` se charge et se rend comme avant. Le corps d'un article

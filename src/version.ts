@@ -23,7 +23,7 @@
  * jalons franchis, et `public-surface.spec.ts` échoue désormais si la surface change sans que
  * cette ligne suive.
  */
-export const HOST_CONTRACT_VERSION = "0.35.0";
+export const HOST_CONTRACT_VERSION = "0.36.0";
 
 /**
  * Plus ancienne version du contrat encore compatible avec ce noyau.
@@ -42,5 +42,7 @@ export const HOST_CONTRACT_VERSION = "0.35.0";
  * deviennent obligatoires, ce qui fait échouer `check-extension` sur un thème qui ne les pose pas,
  * sans l'empêcher de se charger — le moteur ne vérifie pas les îlots au chargement. La 0.35.0 est
  * purement additive : deux champs de plus sur `ThemeKbArticle`, que les gabarits existants ignorent.
+ * La 0.36.0 l'est aussi : deux variantes de plus sur `GatewayEvent`, qu'un module `payment` qui ne
+ * les émet pas n'a aucune raison de connaître.
  */
 export const HOST_CONTRACT_COMPATIBLE_SINCE = "0.16.0";

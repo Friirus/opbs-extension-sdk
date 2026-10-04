@@ -58,6 +58,26 @@ requis pour vérifier une signature HMAC). Sous `// @ts-check`, ce type n'existe
 est résolu par votre éditeur — la même dépendance de développement que celle de `@opbs/extension-sdk`
 suffit, `Buffer` fait partie de ses types globaux Node.
 
+Depuis 0.36.0, `verifyWebhook` traduit aussi ce qui se passe côté prestataire sans passer par un
+appel du noyau : `payment.refunded` (un remboursement fait depuis le tableau de bord de la
+passerelle, `gatewayRef` = l'encaissement d'origine, `refundRef` = le remboursement lui-même, clé
+d'idempotence pour un webhook rejoué) et `payment.dispute.closed` (un `payment.disputed` antérieur
+se referme, `won` ou `lost`). Sans eux, un remboursement fait chez le prestataire laisse la facture
+locale `PAID` alors que l'argent est reparti. Un module qui les émet déclare `engines.host:
+"^0.36.0"`.
+
+Le noyau ne souscrit rien chez le prestataire : l'hébergeur coche, en créant l'endpoint ou le
+webhook, les événements qu'il enverra, et un événement non coché n'arrive jamais, sans erreur ni
+d'un côté ni de l'autre. Si votre module traduit des événements du prestataire (paiement,
+remboursement, litige), sa documentation **et** l'aide (`help`) du champ de configuration qui porte
+le secret ou l'identifiant du webhook doivent nommer chacun d'eux, sinon un hébergeur qui a créé son
+endpoint avec une sélection ne les recevra jamais. Les modules livrés le font, et un spec compare
+leur liste aux événements que `verifyWebhook` lit réellement : `stripe` lit
+`checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`,
+`charge.dispute.created`, `charge.dispute.closed`, `refund.created` et `refund.updated` ; `paypal`
+lit `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`,
+`CUSTOMER.DISPUTE.CREATED` et `CUSTOMER.DISPUTE.RESOLVED`.
+
 Un module `provisioning` peut en plus déclarer `reportsNodeCapacity: true` et implémenter
 `listNodeCapacity(ctx, provider)` s'il a une notion de nœud physique (cpu/mem/disque observés, par
 opposition à `ResourceSpec` qui est ce qui est *vendu*). C'est un champ à part, hors de
@@ -349,6 +369,33 @@ essai » de sa carte dans Paramètres › Extensions — visible dès que la mé
 écrire. Même contrat que `send` : rend `{ delivered, error? }`, ne lève jamais. Le module `discord`
 livré la déclare déjà, et l'expose une seconde fois depuis son propre écran contribué (une action
 `send-test`) — les deux chemins appellent la même méthode, ce n'est pas une redite à corriger.
+
+`NotificationEvent.payload` n'est jamais filtré pour un canal en particulier — le bus ne connaît
+pas ses abonnés. Certains événements portent des données personnelles (`email` sur
+`customer.registered`, `ipAddress`/`device` sur `login.suspicious`, `subject` sur
+`ticket.created`, `target` — l'hôte ou l'URL du service du client — sur `service.monitor.down` et
+`.up`, `message` — le texte d'erreur brut du registrar ou du DNS — sur `domain.renewal.failed` et
+`dns.zone.error`, `reason` sur `subscription.cancelled`, `name` sur les événements de domaine, de
+zone et de sonde) : un canal qui relaie vers un service tiers **ne doit jamais poster ce payload
+tel quel**. `discord.ts` (livré) construit un résumé avec `event-digest.ts`
+(`packages/extensions/src/bundled/`) plutôt que de sérialiser l'événement brut.
+
+Deux règles à reprendre si vous écrivez votre propre canal. Un module tiers émet aussi sur le bus
+(`extension.<moduleId>.<événement>`, charge utile libre) : comparez donc les **clés normalisées**
+(minuscules, sans `_` ni `-`) et non des chaînes exactes, faute de quoi `customerEmail`,
+`contactEmail`, `ip_address` ou `clientIp` passent inchangés. Et ne vous fiez pas à une liste
+d'exclusion pour les événements du noyau : `event-digest.ts` tranche chaque champ de chaque
+événement (`CORE_EVENT_FIELD_DECISIONS`, `masked` ou `kept`) et un spec échoue dès qu'un champ de
+`CoreEventPayloads` arrive sans décision.
+
+Le masquage de `event-digest.ts` lit les clés **et** la forme des valeurs : toute chaîne, à toute
+profondeur, qui contient une adresse e-mail ou une adresse IP (v4 ou v6) voit cette sous-chaîne
+remplacée par `[masqué]`, quelle que soit sa clé (`1.2.3.4` est une IPv4 valide : un numéro de
+version à quatre nombres est masqué aussi). C'est un filet, pas une garantie : un nom, une raison
+sociale ou un texte libre n'ont aucune forme à reconnaître. **Auteur de module, ne mettez aucune
+donnée personnelle sous une clé arbitraire** (`label`, `owner`, `note2`…) dans la charge utile de
+vos événements `extension.<moduleId>.<événement>` : le canal Discord livré relaie tout ce que le
+bus porte, et un webhook sortant configuré vers une URL Discord reçoit la charge brute.
 
 ## Écrans contribués
 

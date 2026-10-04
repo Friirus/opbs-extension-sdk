@@ -231,6 +231,28 @@ export type GatewayEvent =
       gatewayMethodRef: string;
       metadata: Record<string, string>;
     }
+  /**
+   * Un remboursement fait depuis le tableau de bord du prestataire, hors de tout appel à
+   * `refund()`. `gatewayRef` désigne l'encaissement d'origine — celui déjà posé sur `Payment.
+   * gatewayRef` — et `refundRef` le remboursement lui-même, clé d'idempotence pour un webhook
+   * rejoué. Sans cet événement, un remboursement fait chez le prestataire laisse la facture locale
+   * `PAID` : le client a récupéré son argent et le service continue de tourner.
+   */
+  | {
+      type: "payment.refunded";
+      gatewayRef: string;
+      refundRef: string;
+      amountCents: number;
+      currency: string;
+      reason?: string;
+    }
+  /**
+   * Un litige (`payment.disputed`) se referme, dans un sens ou dans l'autre. `won` : l'hébergeur
+   * a gagné, la facture reste ce qu'elle était avant le litige. `lost` : les fonds sont repartis
+   * chez le prestataire — comptablement un remboursement, mais que ni Stripe ni PayPal ne notifient
+   * par leur événement de remboursement habituel, d'où la variante séparée.
+   */
+  | { type: "payment.dispute.closed"; gatewayRef: string; outcome: "won" | "lost" }
   | { type: "ignored" };
 
 /**

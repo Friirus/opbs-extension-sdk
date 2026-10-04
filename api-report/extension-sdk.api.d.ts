@@ -1146,6 +1146,32 @@ export type GatewayEvent = {
     gatewayCustomerRef: string;
     gatewayMethodRef: string;
     metadata: Record<string, string>;
+}
+/**
+ * Un remboursement fait depuis le tableau de bord du prestataire, hors de tout appel à
+ * `refund()`. `gatewayRef` désigne l'encaissement d'origine — celui déjà posé sur `Payment.
+ * gatewayRef` — et `refundRef` le remboursement lui-même, clé d'idempotence pour un webhook
+ * rejoué. Sans cet événement, un remboursement fait chez le prestataire laisse la facture locale
+ * `PAID` : le client a récupéré son argent et le service continue de tourner.
+ */
+ | {
+    type: "payment.refunded";
+    gatewayRef: string;
+    refundRef: string;
+    amountCents: number;
+    currency: string;
+    reason?: string;
+}
+/**
+ * Un litige (`payment.disputed`) se referme, dans un sens ou dans l'autre. `won` : l'hébergeur
+ * a gagné, la facture reste ce qu'elle était avant le litige. `lost` : les fonds sont repartis
+ * chez le prestataire — comptablement un remboursement, mais que ni Stripe ni PayPal ne notifient
+ * par leur événement de remboursement habituel, d'où la variante séparée.
+ */
+ | {
+    type: "payment.dispute.closed";
+    gatewayRef: string;
+    outcome: "won" | "lost";
 } | {
     type: "ignored";
 };
@@ -4460,7 +4486,7 @@ export declare function createTestHost(options?: TestHostOptions): TestHostConte
  * jalons franchis, et `public-surface.spec.ts` échoue désormais si la surface change sans que
  * cette ligne suive.
  */
-export declare const HOST_CONTRACT_VERSION = "0.35.0";
+export declare const HOST_CONTRACT_VERSION = "0.36.0";
 /**
  * Plus ancienne version du contrat encore compatible avec ce noyau.
  *
@@ -4478,5 +4504,7 @@ export declare const HOST_CONTRACT_VERSION = "0.35.0";
  * deviennent obligatoires, ce qui fait échouer `check-extension` sur un thème qui ne les pose pas,
  * sans l'empêcher de se charger — le moteur ne vérifie pas les îlots au chargement. La 0.35.0 est
  * purement additive : deux champs de plus sur `ThemeKbArticle`, que les gabarits existants ignorent.
+ * La 0.36.0 l'est aussi : deux variantes de plus sur `GatewayEvent`, qu'un module `payment` qui ne
+ * les émet pas n'a aucune raison de connaître.
  */
 export declare const HOST_CONTRACT_COMPATIBLE_SINCE = "0.16.0";

@@ -20,6 +20,36 @@ n'éteint aucun module existant. C'est délibéré tant que la surface n'est pas
 > module qui déclare `^0.1.0` cesse donc de se charger à partir de cette version — c'est l'effet
 > recherché, il a été écrit contre un contrat qui n'existe plus.
 
+## 0.36.0 — 2026-10-04
+
+Additif, aucune rupture de signature : `GatewayEvent` gagne deux variantes,
+`payment.refunded` et `payment.dispute.closed`. Un module qui ne les émet pas se comporte
+exactement comme avant. Un module `payment` qui les émet déclare `^0.36.0`, pour qu'un noyau plus
+ancien le refuse au lieu de jeter ses événements.
+
+**Ce que ça ouvre.** Un remboursement ou la clôture d'un litige faits depuis le tableau de bord du
+prestataire (Stripe, PayPal) plutôt que par un appel à `refund()` n'avaient aucun chemin vers le
+noyau : la facture restait `PAID`, l'argent était pourtant reparti. `payment.refunded` porte
+`gatewayRef` (l'encaissement d'origine) et `refundRef` (le remboursement lui-même, clé
+d'idempotence pour un webhook rejoué) ; `payment.dispute.closed` referme un `payment.disputed`
+dans un sens (`won`, la facture reste ce qu'elle était) ou dans l'autre (`lost`, comptablement un
+remboursement, mais qu'aucun des deux prestataires ne notifie par leur événement de remboursement
+habituel).
+
+**Pourquoi maintenant, et pas au moment de dessiner le contrat.** Constat de l'audit du
+2026-09-05 sur les sept modules bundled : `stripe.ts` traduisait `charge.dispute.created` en
+`payment.disputed` mais rien côté clôture ni côté remboursement, et `paypal.ts` n'écoutait ni
+`PAYMENT.CAPTURE.REFUNDED` ni `CUSTOMER.DISPUTE.RESOLVED`. C'est un cas réel d'argent, pas un
+raffinement de forme — levée nommée du moratoire du 2026-08-28, sur le même principe que
+`retryAfterSeconds` (0.27.0) et `setIfAbsent` (0.28.0) : un manque découvert en éprouvant le
+contrat contre un prestataire réel, pas en l'imaginant à l'avance.
+
+**Numérotation.** Ce lot a été écrit le 2026-09-05 sur une branche à part sous le numéro `0.29.0`,
+pris entre-temps par les réglages de thème liés au CSS ; il est repris sur `main` en `0.36.0`. Les
+modules d'exemple dont la branche d'origine déclarait `^0.29.0` pour ce lot (`ovh-cloud`,
+`one-click-installer`, `pterodactyl-ports`, `reference-dns`, `reference-registrar`) n'ont rien à
+adapter : la plage `^0.29.0` reste couverte par la fenêtre de compatibilité.
+
 ## 0.35.0 — 2026-10-03
 
 Additif, aucune rupture : un thème écrit contre `0.34.0` se charge et se rend comme avant. Il
@@ -419,6 +449,7 @@ communiquer. `SubscriptionAddon.provisioningNote` n'était renseignée qu'en éc
 portail l'affiche quel que soit l'état — un succès muet restait muet. `onAttach` peut désormais
 rendre `{ note?: string }`, posé dans cette même colonne. Le contournement en place jusqu'ici — une
 page de portail dédiée par module — reste valide, ce n'est plus la seule option.
+
 
 ## 0.28.0 — 2026-09-02
 
