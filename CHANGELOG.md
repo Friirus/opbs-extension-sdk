@@ -20,6 +20,50 @@ n'éteint aucun module existant. C'est délibéré tant que la surface n'est pas
 > module qui déclare `^0.1.0` cesse donc de se charger à partir de cette version — c'est l'effet
 > recherché, il a été écrit contre un contrat qui n'existe plus.
 
+## 0.37.0 — 2026-10-05
+
+Additif à une exception annoncée (`/register` dans `nav` quand l'inscription publique est ouverte,
+qui ajoute un lien au rendu de tout thème), plancher inchangé (`0.16.0`) : un thème écrit contre
+un contrat antérieur se charge comme avant. `ThemeHomeView`, le contexte de `pages/home.liquid`,
+gagne deux clés, `statusSummary` (type `ThemeStatusSummary`) et `tldPrices` (type
+`ThemeTldPrice[]`), qu'un gabarit qui ne les lit pas ignore. Un thème qui lit l'une des deux
+déclare `^0.37.0`, pour qu'un noyau plus ancien le refuse au lieu de lui rendre un bloc vide.
+
+**Ce que ça ouvre.** L'accueil React du portail montre l'état mesuré de l'infrastructure et les
+tarifs des extensions de domaine ; un gabarit d'accueil ne le pouvait pas, faute de donnée dans
+son contexte. `theme-argile` l'écrivait lui-même en tête de `templates/pages/home.liquid` : aucun
+chiffre mesuré n'avait de source dans cette vue, et l'écrire en dur aurait publié, au nom de chaque
+hébergeur, des chiffres que personne n'a relevés.
+
+- `statusSummary` (`nodeCount`, `onlineCount`, `measuredUptime`, `measuredDays`) est **absent**
+  sans nœud publié sur la page de statut, sans relevé de moins de cinq minutes, avec moins d'un jour
+  de relevés ou des relevés trop lacunaires, quand l'instance ne publie pas de page de statut, et
+  sous la marque d'un revendeur. `measuredUptime` est arrondi par défaut au dixième : ce qui est
+  mesuré, jamais ce qui est annoncé (`commitments.uptime`).
+- `tldPrices` (`tld`, `registerPriceFormatted`) porte six extensions au plus, un prix par
+  extension, celui que la recherche et la commande retiennent. Prix d'**enregistrement** pour un
+  an seulement, le seul que la commande et le renouvellement facturent ; hors taxe, mention
+  comprise dans la chaîne, dans la devise de la grille. Tableau toujours présent, vide sans tarif
+  actif.
+- Les deux sont mis en forme dans la locale de l'instance, comme les engagements et les prix du
+  catalogue de la même vue. La documentation de `ThemeViewContext.locale` est corrigée dans ce
+  sens : en vitrine, `locale` est la langue du visiteur relayée par le portail, mais les valeurs
+  dérivées restent au format de l'instance.
+
+**L'exception annoncée : `/register` dans `nav`.** Aucun type ne change, mais le contenu de
+`ThemeShellContext.nav` si : en vitrine, « Créer un compte » (`/register`) suit juste `/login`
+quand l'inscription publique est ouverte, sauf sous la marque d'un revendeur (l'inscription
+publique ne rattache pas au revendeur) et sauf pour un visiteur déjà connecté (`authenticated`).
+Un thème qui rend `nav` en entier gagne donc un lien. Les pages de l'hébergeur, des modules et du
+thème viennent après les liens du noyau : « le dernier lien » de `nav` n'est pas un repère fiable
+pour mettre une action en avant, et c'est souvent l'une de ces pages qui prenait l'accent. Les
+thèmes livrés désignent désormais l'action par son `href` (`/register` s'il est là, sinon
+`/login`) ; un thème tiers qui mettait `forloop.last` en avant devrait faire de même.
+
+**Levée nommée du moratoire du 2026-08-28**, demandée par l'utilisateur le 2026-10-05 en
+reprenant la vitrine de démonstration, et non par un hébergeur tiers. Elle couvre ces deux clés
+et rien d'autre (voir `ROADMAP.md`).
+
 ## 0.36.0 — 2026-10-04
 
 Additif, aucune rupture de signature : `GatewayEvent` gagne deux variantes,

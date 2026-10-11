@@ -562,6 +562,19 @@ SDK aux côtés de `ThemeDefinition` :
   exact aussi en vitrine — vrai quand le visiteur a une session —, et ne sert qu'à l'affichage
   (« Mon espace » plutôt que « Connexion ») : ce qu'il masque reste joignable.
 
+  **`nav` en vitrine et « Créer un compte ».** Depuis 0.37.0, `nav` porte `/register` juste après
+  `/login` quand l'inscription publique est ouverte, sauf sous la marque d'un revendeur
+  (l'inscription publique ne rattache pas au revendeur) et sauf pour un visiteur déjà connecté
+  (`authenticated`). Les pages de contenu, de module et de thème viennent après les liens du noyau.
+  « Le dernier lien » n'est donc pas un repère fiable : pour mettre une action en avant, testez son
+  `href`, comme les thèmes livrés.
+
+  ```liquid
+  {%- assign emphasisHref = "/login" -%}
+  {%- for link in nav -%}{%- if link.href == "/register" -%}{%- assign emphasisHref = "/register" -%}{%- endif -%}{%- endfor -%}
+  {% for link in nav %}<a href="{{ link.href }}"{% if link.href == emphasisHref %} class="action"{% endif %}>{{ link.label }}</a>{% endfor %}
+  ```
+
   **`legalLinks` n'est pas facultatif à rendre.** Il porte les documents légaux que l'hébergeur a
   effectivement publiés (mentions légales, CGV, confidentialité, remboursement, cookies). Sur la
   vitrine, dès que votre thème fournit `partials/footer.liquid`, le portail cesse de rendre le
@@ -604,7 +617,7 @@ portail : aucune page ne reste hors de portée d'un thème.
 
 | Vue | Gabarit | Reçoit | Îlots obligatoires |
 |---|---|---|---|
-| `home` | `pages/home.liquid` | `sections`, `bundles`, `commitments` | — |
+| `home` | `pages/home.liquid` | `sections`, `bundles`, `commitments`, `statusSummary?` et `tldPrices` (0.37.0) | — |
 | `catalog` | `pages/catalog.liquid` | `sections`, `bundles` | `order-button` |
 | `cart` | `pages/cart.liquid` | — | `cart` |
 | `domains` | `pages/domains.liquid` | — | `domain-search` |
@@ -1406,9 +1419,33 @@ signature, des engagements qu'il n'avait jamais pris et qu'il ne pouvait corrige
 fichier du thème. Un thème décide *où* un chiffre apparaît ; seul l'hébergeur décide *lequel*, et
 son silence est une réponse valable — la section ne s'affiche pas.
 
-La règle vaut au-delà de ces trois champs : n'écrivez dans un gabarit aucune affirmation qui
-engage l'exploitant du site. Prix, délais, garanties, certifications, avis de clients — rien de
-tout cela n'est connu de l'auteur d'un thème.
+Depuis 0.37.0, l'accueil reçoit aussi deux chiffres d'une autre nature. `commitments.uptime` est
+ce que l'hébergeur *annonce* ; `statusSummary.measuredUptime` est ce que les relevés de la page de
+statut *constatent*, sur les `statusSummary.measuredDays` derniers jours, tous nœuds publiés
+confondus. Un gabarit ne présente jamais le second comme un engagement, et ne met pas les deux
+côte à côte sans dire lequel est lequel. Il n'écrit jamais de durée fixe (« sur 90 jours ») : il
+lit `measuredDays`, puisqu'une instance installée il y a trois jours n'a pas trois mois de relevés.
+`statusSummary` est **absent** sans relevé récent, sans historique suffisant, quand l'instance ne
+publie pas de page de statut, et sous la marque d'un revendeur. `tldPrices` porte des prix
+catalogue d'enregistrement pour un an, hors taxe, mention comprise (« 9,99 € HT »), dans la devise
+de la grille tarifaire ; la commande les convertit ensuite dans la devise du client. Comme les
+engagements, ces valeurs sont mises en forme dans la locale de l'instance.
+
+```liquid
+{% if statusSummary %}
+  {{ statusSummary.onlineCount }}/{{ statusSummary.nodeCount }} en ligne · {{ statusSummary.measuredUptime }} mesurés
+  {% if statusSummary.measuredDays == 1 %}sur le dernier jour{% else %}sur les {{ statusSummary.measuredDays }} derniers jours{% endif %}
+{% endif %}
+{% if tldPrices.size > 0 %}
+  {% for price in tldPrices %}{{ price.tld }} {{ price.registerPriceFormatted }}{% unless forloop.last %} · {% endunless %}{% endfor %}
+{% endif %}
+```
+
+Un thème qui lit `statusSummary` ou `tldPrices` déclare `engines.host: "^0.37.0"`.
+
+La règle vaut au-delà des trois champs de `commitments` : n'écrivez dans un gabarit aucune
+affirmation qui engage l'exploitant du site. Prix, délais, garanties, certifications, avis de
+clients — rien de tout cela n'est connu de l'auteur d'un thème.
 
 ### Le CSS et le JS
 
@@ -1529,7 +1566,7 @@ que pour montrer un point du contrat — un thème tiers rhabille l'écran de co
 écrire le formulaire. Il déclare encore `^0.33.0` et n'utilise aucun ajout de 0.34.0 au-delà des
 îlots devenus obligatoires sur `service`.
 
-`theme-argile`, versionné dans le dépôt du produit, est la référence complète du contrat 0.35.0 :
+`theme-argile`, versionné dans le dépôt du produit, est la référence complète du contrat 0.37.0 :
 les 46 vues, des sections, sous-groupes et blocs, des conditions chaînées, des liens, des polices
 livrées et le type `font`, du texte en markdown, des textes du thème rangés par section, les
 traductions du panel, et des zones `data-theme-setting` sur ses régions réglables.

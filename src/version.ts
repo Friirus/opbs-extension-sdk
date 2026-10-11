@@ -23,7 +23,7 @@
  * jalons franchis, et `public-surface.spec.ts` échoue désormais si la surface change sans que
  * cette ligne suive.
  */
-export const HOST_CONTRACT_VERSION = "0.36.0";
+export const HOST_CONTRACT_VERSION = "0.37.0";
 
 /**
  * Plus ancienne version du contrat encore compatible avec ce noyau.
@@ -43,6 +43,9 @@ export const HOST_CONTRACT_VERSION = "0.36.0";
  * sans l'empêcher de se charger — le moteur ne vérifie pas les îlots au chargement. La 0.35.0 est
  * purement additive : deux champs de plus sur `ThemeKbArticle`, que les gabarits existants ignorent.
  * La 0.36.0 l'est aussi : deux variantes de plus sur `GatewayEvent`, qu'un module `payment` qui ne
- * les émet pas n'a aucune raison de connaître.
+ * les émet pas n'a aucune raison de connaître. La 0.37.0 l'est aussi, à une exception annoncée :
+ * deux clés de plus dans le contexte de la vue `home` (`statusSummary`, `tldPrices`), qu'un
+ * gabarit qui ne les lit pas ignore, et `/register` dans `nav` quand l'inscription publique est
+ * ouverte, qui ajoute un lien au rendu de tout thème sans l'empêcher de se charger.
  */
 export const HOST_CONTRACT_COMPATIBLE_SINCE = "0.16.0";

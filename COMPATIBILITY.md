@@ -88,9 +88,9 @@ Tout ce qui n'est pas listé ci-dessus. Explicitement, et sans que la liste soit
 
 - **Les autres routes HTTP.** `customers`, `products`, `product-categories`, `orders`, `checkout`,
   `credit-notes`, `settings`, `users`, `api-keys`, `audit-logs`, `reports`, `metrics`, `search`,
-  `export`, `privacy`, `backup-jobs`, `proxmox-clusters`, `webhook-endpoints`, les routes `auth/*`
-  et les routes `:id` de détail des quatre contrôleurs publics. Elles servent les deux interfaces
-  web du produit et suivent leurs besoins.
+  `export`, `privacy`, `backup-jobs`, `proxmox-clusters`, `webhook-endpoints`, `status/summary`,
+  `domain-tld-pricing/public`, les routes `auth/*` et les routes `:id` de détail des quatre
+  contrôleurs publics. Elles servent les deux interfaces web du produit et suivent leurs besoins.
 - **Le schéma de base de données.** Noms de tables, de colonnes, énumérations, index. Il change à
   chaque migration.
 - **Les autres paquets `@opbs/*`.** Ils restent `private` et internes au dépôt — seul
@@ -344,6 +344,37 @@ un gabarit générique, qui ne peut pas écrire ces noms en clair, et sans perte
 d'îlot invalide est refusé à la saisie côté panel, et n'aurait de toute façon rien monté.
 `missingRequiredIslands` n'est pas assoupli — un nom calculé ne prouve pas qu'un îlot obligatoire
 est en place.
+
+### L'accueil reçoit l'état des services et les tarifs des domaines (0.37.0)
+
+Levée nommée du moratoire du 2026-08-28, demandée par l'utilisateur (voir `ROADMAP.md`). Additif
+à une exception annoncée : un thème écrit contre un contrat antérieur se charge comme avant, et son
+rendu ne change que par `/register` dans `nav` (inscription publique ouverte, hors marque de
+revendeur, hors session client). `ThemeHomeView`, le contexte de `pages/home.liquid`, gagne deux
+clés.
+
+- **`statusSummary`** (`ThemeStatusSummary` : `nodeCount`, `onlineCount`, `measuredUptime`,
+  `measuredDays`) : l'état *mesuré* des nœuds publiés sur la page de statut, à ne pas confondre
+  avec `commitments.uptime`, *annoncé* par l'hébergeur. La clé est **absente** sans nœud publié,
+  sans relevé de moins de cinq minutes, avec moins d'un jour de relevés ou des relevés trop
+  lacunaires pour soutenir un pourcentage, quand l'instance ne publie pas de page de statut, et
+  sous la marque d'un revendeur. Jamais d'objet partiel.
+- **`tldPrices`** (`ThemeTldPrice[]` : `tld`, `registerPriceFormatted`) : six extensions de domaine
+  en vente au plus, un prix par extension (celui que la recherche et la commande retiennent),
+  groupées par devise puis par prix croissant. Tableau toujours présent, vide sans tarif actif.
+  Seul le prix d'**enregistrement** pour un an est exposé, hors taxe, mention comprise, dans la
+  devise de la grille : le renouvellement et le transfert ne le sont pas tant qu'aucun parcours
+  client ne les facture.
+
+Les deux sont mis en forme dans la locale de l'instance, comme les engagements et les prix du
+catalogue de la même vue, quelle que soit `locale`. Un thème déclare `^0.37.0` dès qu'il lit l'une
+des deux clés. Le thème livré Encre et `theme-argile` les lisent.
+
+L'exception annoncée, `/register` dans `nav`, ne change aucun type : en vitrine, le lien suit
+`/login` quand l'inscription publique est ouverte, hors marque de revendeur et hors session
+client. Il est le dernier lien *du noyau*, pas forcément le dernier de `nav`, où les pages de
+l'hébergeur, des modules et du thème viennent après : un gabarit qui met en avant le dernier lien
+(`forloop.last`) y met une de ces pages. Les thèmes livrés désignent l'action par son `href`.
 
 ### Un remboursement ou un litige clos chez la passerelle atteint le noyau (0.36.0)
 

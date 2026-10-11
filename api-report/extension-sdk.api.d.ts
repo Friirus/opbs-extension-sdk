@@ -644,7 +644,7 @@ export type { ContributedLabel, ContributedPage, ContributedScreen, ModulePageAc
 export { missingNodeCapacityReporting, missingProvisioningOperations, missingStorageUsageReporting, missingUsageReporting, NO_CAPABILITIES, NO_PROVISIONING_CAPABILITIES, } from "./kinds/provisioning";
 export type { BackupOutcome, ConsoleSession, NodeCapacitySnapshot, ProvisioningCapabilities, ProvisioningDescriptor, ProvisioningNetwork, ProvisioningNetworkAddress, ProvisioningOperation, ProvisioningOutcome, ProvisioningTarget, ResourceSpec, ServiceUsageSnapshot, StorageUsageSnapshot, SnapshotInfo, } from "./kinds/provisioning";
 export { DEFAULT_THEME_TOKENS, THEME_ISLANDS, THEME_VIEWS, THEME_VIEW_NAMES, declaredIslands, invalidThemePages, isProvidedContextView, isSafeSettingUrl, isHexColor, THEME_TEXT_KEY_PATTERN, THEME_TEXT_MAX_LENGTH, themeTranslationReads, themeSettingStyle, themeSettingEditable, MAX_LIST_ITEMS, isSafeTokenValue, isSafeThemeFont, isSafeUploadedFontFamily, isAllowedFontValue, uploadedFontFaces, themeFontFaces, THEME_PREVIEW_PATHS, THEME_ACCOUNT_PREVIEW_PATHS, isThemePreviewPath, themePanelStrings, themeSettingWarnings, mergeThemeTokens, missingRequiredIslands, themeIslandSpec, themePageTemplatePath, themeSettingValues, invalidThemeSettings, themeViewSpec, unknownIslands, } from "./kinds/theme";
-export type { PartialThemeTokens, ResolvedTheme, ThemeSettingResolveOptions, ThemeSettingGroup, ThemePreviewPath, ThemeTranslations, ThemeAcceptInviteView, ThemeAccountBillingView, ThemeAccountNav, ThemeAccountPaymentMethodsView, ThemeAccountPrivacyView, ThemeAccountProfileView, ThemeAccountReferralView, ThemeAccountSecurityView, ThemeAccountTeamView, ThemeAccountView, ThemeBundleView, ThemeCartView, ThemeCatalogView, ThemeCatalogFamily, ThemeCategorySection, ThemeColors, ThemeColorScheme, ThemeContentPageView, ThemeCustomPageView, ThemeDashboardView, ThemeDefinition, ThemeDensity, ThemeDnsZonesView, ThemeDnsZoneView, ThemeDomainsMineView, ThemeDomainsView, ThemeDomainView, ThemeElevation, ThemeEmailContext, ThemeFont, ThemeUploadedFont, ThemeForgotPasswordView, ThemeHistoryView, ThemeHomeView, ThemeInvoiceSummary, ThemeInvoicesView, ThemeInvoiceView, ThemeIslandSpec, ThemeKbArticle, ThemeKbArticleSummary, ThemeKbArticleView, ThemeKbView, ThemeLayout, ThemeLegalDocumentView, ThemeLegalPrivacyView, ThemeLegalTermsView, ThemeLoginView, ThemeNavLink, ThemePageBlock, ThemePageDeclaration, ThemePagination, ThemePasswordPolicy, ThemeProductView, ThemeRadii, ThemeRegisterView, ThemeResellerClientNewView, ThemeResellerBrandingView, ThemeResellerClientsView, ThemeResellerClientView, ThemeResetPasswordView, ThemeServiceCommitments, ThemeServiceConsoleView, ThemeServicesView, ThemeServiceSummary, ThemeServiceView, ThemeShellContext, ThemeSsoCallbackView, ThemeSsoLinkView, ThemeTicketNewView, ThemeTicketsView, ThemeTicketView, ThemeTokens, ThemeTypography, ThemeVerifyEmailView, ThemeViewContext, ThemeViewSpec, } from "./kinds/theme";
+export type { PartialThemeTokens, ResolvedTheme, ThemeSettingResolveOptions, ThemeSettingGroup, ThemePreviewPath, ThemeTranslations, ThemeAcceptInviteView, ThemeAccountBillingView, ThemeAccountNav, ThemeAccountPaymentMethodsView, ThemeAccountPrivacyView, ThemeAccountProfileView, ThemeAccountReferralView, ThemeAccountSecurityView, ThemeAccountTeamView, ThemeAccountView, ThemeBundleView, ThemeCartView, ThemeCatalogView, ThemeCatalogFamily, ThemeCategorySection, ThemeColors, ThemeColorScheme, ThemeContentPageView, ThemeCustomPageView, ThemeDashboardView, ThemeDefinition, ThemeDensity, ThemeDnsZonesView, ThemeDnsZoneView, ThemeDomainsMineView, ThemeDomainsView, ThemeDomainView, ThemeElevation, ThemeEmailContext, ThemeFont, ThemeUploadedFont, ThemeForgotPasswordView, ThemeHistoryView, ThemeHomeView, ThemeInvoiceSummary, ThemeInvoicesView, ThemeInvoiceView, ThemeIslandSpec, ThemeKbArticle, ThemeKbArticleSummary, ThemeKbArticleView, ThemeKbView, ThemeLayout, ThemeLegalDocumentView, ThemeLegalPrivacyView, ThemeLegalTermsView, ThemeLoginView, ThemeNavLink, ThemePageBlock, ThemePageDeclaration, ThemePagination, ThemePasswordPolicy, ThemeProductView, ThemeRadii, ThemeRegisterView, ThemeResellerClientNewView, ThemeResellerBrandingView, ThemeResellerClientsView, ThemeResellerClientView, ThemeResetPasswordView, ThemeServiceCommitments, ThemeServiceConsoleView, ThemeServicesView, ThemeServiceSummary, ThemeServiceView, ThemeShellContext, ThemeSsoCallbackView, ThemeSsoLinkView, ThemeStatusSummary, ThemeTicketNewView, ThemeTicketsView, ThemeTicketView, ThemeTldPrice, ThemeTokens, ThemeTypography, ThemeVerifyEmailView, ThemeViewContext, ThemeViewSpec, } from "./kinds/theme";
 export { isReservedPageSlug, RESERVED_PAGE_SLUGS } from "./reserved-slugs";
 export { missingAddonOperations } from "./kinds/addon";
 export type { AddonDescriptor, AddonOffering, AddonOutcome, AddonSubscriptionContext, } from "./kinds/addon";
@@ -2256,6 +2256,48 @@ export interface ThemeServiceCommitments {
     /** Délai de première réponse du support, en heures ouvrées. */
     supportResponseHours?: number;
 }
+/**
+ * État **mesuré** de l'infrastructure publiée sur la page de statut (0.37.0).
+ *
+ * À ne pas confondre avec `ThemeServiceCommitments.uptime`, qui est ce que l'hébergeur *annonce*.
+ * Ceci est ce que les relevés du worker *constatent*, tous nœuds publiés confondus. Un gabarit ne
+ * le présente jamais comme un engagement.
+ *
+ * N'existe que si chaque champ est vrai et affichable : jamais d'objet partiel. Le pourcentage est
+ * déjà mis en forme, pour la même raison que les engagements (Liquid n'a pas `Intl`), dans la
+ * locale de l'instance, comme eux.
+ */
+export interface ThemeStatusSummary {
+    /** Nœuds publiés sur la page de statut (cochés « visible » par le staff). Au moins 1. */
+    nodeCount: number;
+    /** Ceux dont le dernier relevé, vieux de moins de cinq minutes, les dit en ligne. */
+    onlineCount: number;
+    /**
+     * Disponibilité mesurée sur les `measuredDays` derniers jours, agrégée sur tous les relevés des
+     * nœuds publiés, **arrondie par défaut** au dixième (« 99,9 % »). 99,95 % s'écrit « 99,9 % »,
+     * jamais « 100 % ».
+     */
+    measuredUptime: string;
+    /**
+     * Jours couverts par la mesure, entre 1 et la fenêtre de la page de statut. Un gabarit écrit
+     * « sur les {{ statusSummary.measuredDays }} derniers jours », jamais une durée fixe : une
+     * instance installée il y a trois jours n'a pas trois mois d'historique.
+     */
+    measuredDays: number;
+}
+/**
+ * Prix catalogue d'enregistrement d'une extension de domaine en vente (0.37.0), pour un an.
+ *
+ * Un seul par extension, même si plusieurs registrars la vendent : celui que la recherche et la
+ * commande retiennent. **Hors taxe**, dans la devise de la grille tarifaire de cette extension ; la
+ * commande le convertit ensuite dans la devise du client. La mention hors taxe est comprise dans
+ * la chaîne (« 9,99 € HT ») : un gabarit ne peut pas l'oublier.
+ */
+export interface ThemeTldPrice {
+    /** Extension, en minuscules, point compris (« .com »). */
+    tld: string;
+    registerPriceFormatted: string;
+}
 export interface ThemeCustomPageView extends ThemeViewContext {
     view: "theme-page";
     /**
@@ -2518,11 +2560,15 @@ export interface ThemeViewContext {
      * Un gabarit écrit ses propres libellés — le noyau ne les lui fournit pas, pas plus que WHMCS ou
      * Paymenter ne le font pour les leurs — et c'est cette clé qui lui permet d'en avoir plusieurs :
      * `{% if locale == "en" %}Invoices{% else %}Factures{% endif %}`. Les valeurs *dérivées* des
-     * données (dates, montants, statuts) arrivent en revanche déjà mises en forme dans cette langue :
-     * elles dépendent de règles qu'un gabarit ne peut pas appliquer.
+     * données (dates, montants, statuts) arrivent en revanche déjà mises en forme : elles dépendent
+     * de règles qu'un gabarit ne peut pas appliquer.
      *
-     * Vitrine : la locale de l'instance, faute de visiteur identifié. Espace client : celle du
-     * visiteur.
+     * Vitrine et authentification : la langue du visiteur, que le portail relaie
+     * (`getThemedView`), sinon celle de l'instance. Les valeurs dérivées de la vitrine restent
+     * pourtant mises en forme dans la locale de l'instance, quelle que soit cette clé : montants du
+     * catalogue et de l'accueil, engagements, état mesuré des services, dates de la base de
+     * connaissances. Espace client : la langue du visiteur, dans laquelle la page a déjà mis en
+     * forme ses valeurs.
      */
     locale: string;
     [key: string]: unknown;
@@ -2537,11 +2583,14 @@ export interface ThemeViewContext {
 /**
  * Accueil de la vitrine.
  *
- * Reçoit le catalogue et les engagements, et non le seul nom de l'entreprise : sans eux, un
- * gabarit d'accueil n'avait le choix qu'entre ne rien montrer et écrire des offres en dur — donc
- * publier le catalogue d'un autre hébergeur que celui qui installe le thème. Les deux clés du
- * catalogue sont exactement celles de `ThemeCatalogView`, pour qu'un gabarit écrit pour l'une se
- * relise sans effort dans l'autre.
+ * Reçoit le catalogue, les engagements, l'état mesuré des services et les tarifs des domaines, et
+ * non le seul nom de l'entreprise : sans eux, un gabarit d'accueil n'avait le choix qu'entre ne
+ * rien montrer et écrire des offres en dur — donc publier le catalogue d'un autre hébergeur que
+ * celui qui installe le thème. Les deux clés du catalogue sont exactement celles de
+ * `ThemeCatalogView`, pour qu'un gabarit écrit pour l'une se relise sans effort dans l'autre.
+ *
+ * Les montants et pourcentages de cette vue sont mis en forme dans la locale de l'instance, quelle
+ * que soit `locale`.
  */
 export interface ThemeHomeView extends ThemeViewContext {
     view: "home";
@@ -2552,6 +2601,20 @@ export interface ThemeHomeView extends ThemeViewContext {
      * toujours facultatifs : un gabarit teste `commitments.uptime`, jamais `commitments`.
      */
     commitments: ThemeServiceCommitments;
+    /**
+     * État mesuré des services (0.37.0). **Absent** dans chacun de ces cas : aucun nœud publié sur
+     * la page de statut ; aucun relevé de moins de cinq minutes (collecte arrêtée) ; moins d'un jour
+     * de relevés, ou des relevés trop lacunaires pour soutenir un pourcentage ; l'instance ne publie
+     * pas de page de statut (`ThemeShellContext.statusPageUrl` absente) ; la page est servie sous la
+     * marque d'un revendeur. Un gabarit teste `statusSummary` avant d'en lire un champ.
+     */
+    statusSummary?: ThemeStatusSummary;
+    /**
+     * Extensions de domaine en vente (0.37.0), six au plus, groupées par devise puis par prix
+     * croissant. Tableau toujours présent, vide quand aucun TLD n'est actif ou que la grille est
+     * indisponible : testez `tldPrices.size > 0`.
+     */
+    tldPrices: ThemeTldPrice[];
 }
 export interface ThemeCatalogView extends ThemeViewContext {
     view: "catalog";
@@ -4486,7 +4549,7 @@ export declare function createTestHost(options?: TestHostOptions): TestHostConte
  * jalons franchis, et `public-surface.spec.ts` échoue désormais si la surface change sans que
  * cette ligne suive.
  */
-export declare const HOST_CONTRACT_VERSION = "0.36.0";
+export declare const HOST_CONTRACT_VERSION = "0.37.0";
 /**
  * Plus ancienne version du contrat encore compatible avec ce noyau.
  *
@@ -4505,6 +4568,9 @@ export declare const HOST_CONTRACT_VERSION = "0.36.0";
  * sans l'empêcher de se charger — le moteur ne vérifie pas les îlots au chargement. La 0.35.0 est
  * purement additive : deux champs de plus sur `ThemeKbArticle`, que les gabarits existants ignorent.
  * La 0.36.0 l'est aussi : deux variantes de plus sur `GatewayEvent`, qu'un module `payment` qui ne
- * les émet pas n'a aucune raison de connaître.
+ * les émet pas n'a aucune raison de connaître. La 0.37.0 l'est aussi, à une exception annoncée :
+ * deux clés de plus dans le contexte de la vue `home` (`statusSummary`, `tldPrices`), qu'un
+ * gabarit qui ne les lit pas ignore, et `/register` dans `nav` quand l'inscription publique est
+ * ouverte, qui ajoute un lien au rendu de tout thème sans l'empêcher de se charger.
  */
 export declare const HOST_CONTRACT_COMPATIBLE_SINCE = "0.16.0";
